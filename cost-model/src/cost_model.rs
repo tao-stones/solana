@@ -10,11 +10,8 @@ use {
     log::*,
     solana_compute_budget::compute_budget_processor::{
         process_compute_budget_instructions, DEFAULT_HEAP_COST,
-        DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT,
     },
     solana_sdk::{
-        borsh1::try_from_slice_unchecked,
-        compute_budget::{self, ComputeBudgetInstruction},
         feature_set::{self, FeatureSet},
         fee::FeeStructure,
         instruction::CompiledInstruction,
@@ -152,60 +149,27 @@ impl CostModel {
         transaction: &SanitizedTransaction,
         feature_set: &FeatureSet,
     ) {
-        let mut programs_execution_costs = 0u64;
-        let mut loaded_accounts_data_size_cost = 0u64;
         let mut data_bytes_len_total = 0u64;
-        let mut compute_unit_limit_is_set = false;
-        let mut has_user_space_instructions = false;
-
-        for (program_id, instruction) in transaction.message().program_instructions_iter() {
-            let ix_execution_cost =
-                if let Some(builtin_cost) = BUILT_IN_INSTRUCTION_COSTS.get(program_id) {
-                    *builtin_cost
-                } else {
-                    has_user_space_instructions = true;
-                    u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT)
-                };
-
-            programs_execution_costs = programs_execution_costs
-                .saturating_add(ix_execution_cost)
-                .min(u64::from(MAX_COMPUTE_UNIT_LIMIT));
-
+        for (_program_id, instruction) in transaction.message().program_instructions_iter() {
             data_bytes_len_total =
                 data_bytes_len_total.saturating_add(instruction.data.len() as u64);
-
-            if compute_budget::check_id(program_id) {
-                if let Ok(ComputeBudgetInstruction::SetComputeUnitLimit(_)) =
-                    try_from_slice_unchecked(&instruction.data)
-                {
-                    compute_unit_limit_is_set = true;
-                }
-            }
         }
 
         // if failed to process compute_budget instructions, the transaction will not be executed
         // by `bank`, therefore it should be considered as no execution cost by cost model.
-        match process_compute_budget_instructions(transaction.message().program_instructions_iter())
-        {
-            Ok(compute_budget_limits) => {
-                // if tx contained user-space instructions and a more accurate estimate available correct it,
-                // where "user-space instructions" must be specifically checked by
-                // 'compute_unit_limit_is_set' flag, because compute_budget does not distinguish
-                // builtin and bpf instructions when calculating default compute-unit-limit. (see
-                // compute_budget.rs test `test_process_mixed_instructions_without_compute_budget`)
-                if has_user_space_instructions && compute_unit_limit_is_set {
-                    programs_execution_costs = u64::from(compute_budget_limits.compute_unit_limit);
-                }
-
-                loaded_accounts_data_size_cost = Self::calculate_loaded_accounts_data_size_cost(
-                    usize::try_from(compute_budget_limits.loaded_accounts_bytes).unwrap(),
-                    feature_set,
-                );
-            }
-            Err(_) => {
-                programs_execution_costs = 0;
-            }
-        }
+        let (programs_execution_costs, loaded_accounts_data_size_cost) =
+            match process_compute_budget_instructions(
+                transaction.message().program_instructions_iter(),
+            ) {
+                Ok(compute_budget_limits) => (
+                    u64::from(compute_budget_limits.compute_unit_limit),
+                    Self::calculate_loaded_accounts_data_size_cost(
+                        usize::try_from(compute_budget_limits.loaded_accounts_bytes).unwrap(),
+                        feature_set,
+                    ),
+                ),
+                Err(_) => (0, 0),
+            };
 
         tx_cost.programs_execution_cost = programs_execution_costs;
         tx_cost.loaded_accounts_data_size_cost = loaded_accounts_data_size_cost;
@@ -291,6 +255,7 @@ impl CostModel {
 mod tests {
     use {
         super::*,
+        solana_compute_budget::compute_budget_processor::DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
         solana_sdk::{
             compute_budget::{self, ComputeBudgetInstruction},
             fee::ACCOUNT_DATA_COST_PAGE_SIZE,

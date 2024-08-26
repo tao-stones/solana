@@ -37,6 +37,7 @@ use {
         compute_budget_limits::{self, MAX_COMPUTE_UNIT_LIMIT},
         prioritization_fee::{PrioritizationFeeDetails, PrioritizationFeeType},
     },
+    solana_cost_model::cost_model::CostModel,
     solana_inline_spl::token,
     solana_logger,
     solana_program_runtime::{
@@ -13215,4 +13216,314 @@ fn test_bank_epoch_stakes() {
             Some(100)
         );
     }
+}
+
+#[test]
+fn test_builtin_instructinos_cost_and_budget() {
+    let (mut genesis_config, mint_keypair) = create_genesis_config(sol_to_lamports(1.));
+    genesis_config.rent = Rent::default();
+    let (bank, _bank_forks) = Bank::new_with_bank_forks_for_tests(&genesis_config);
+    let bank = Bank::new_from_parent(
+        bank,
+        &Pubkey::new_unique(),
+        genesis_config.epoch_schedule.get_first_slot_in_epoch(1),
+    );
+    // install memo program account
+    for (program_id, account) in
+        solana_program_test::programs::spl_programs(&genesis_config.rent).iter()
+    {
+        if spl_memo::check_id(program_id) {
+            bank.store_account(program_id, account);
+        }
+    }
+    let amount = genesis_config.rent.minimum_balance(0);
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct TestResult {
+        // execution cost adjustment (eg estimated_execution_cost -
+        // actual_execution_cost) if *committed* successfully; Which always the case for our tests
+        cost_adjustment: i64,
+        // Ok(()) if transaction executed successfully, otherwise error
+        execution_status: Result<()>,
+    }
+
+    let execute_transaction_get_unit_adjustment = |ixs: &[Instruction]| -> TestResult {
+        let tx = Transaction::new(
+            &[&mint_keypair],
+            Message::new(ixs, Some(&mint_keypair.pubkey())),
+            genesis_config.hash(),
+        );
+
+        let estimated_execution_cost = CostModel::calculate_cost(
+            &SanitizedTransaction::from_transaction_for_tests(tx.clone()),
+            &bank.feature_set,
+        )
+        .programs_execution_cost();
+
+        let batch = bank.prepare_batch_for_tests(vec![tx]);
+        let commit_result = bank
+            .load_execute_and_commit_transactions(
+                &batch,
+                MAX_PROCESSING_AGE,
+                false,
+                ExecutionRecordingConfig::new_single_setting(false),
+                &mut ExecuteTimings::default(),
+                None,
+            )
+            .0
+            .remove(0);
+
+        println!("\n{:?}", commit_result);
+
+        match commit_result {
+            Ok(committed_tx) => TestResult {
+                cost_adjustment: estimated_execution_cost as i64
+                    - committed_tx.executed_units as i64,
+                execution_status: committed_tx.status,
+            },
+            Err(_err) => {
+                unreachable!("Our tests should all be executed and committed");
+            }
+        }
+    };
+
+    let transfer_ix =
+        system_instruction::transfer(&mint_keypair.pubkey(), &Pubkey::new_unique(), amount);
+    let set_cu_limit_low_ix = ComputeBudgetInstruction::set_compute_unit_limit(1);
+    let set_cu_limit_high_ix = ComputeBudgetInstruction::set_compute_unit_limit(500_000);
+    // construct a memo instruction that would consume more CU than DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT
+    let memo = "The quick brown fox jumped over the lazy dog. ".repeat(22) + "!";
+    let memo_ix = spl_memo::build_memo(memo.as_bytes(), &[]);
+    let memo_ix_cost = 356963_u64;
+    let (create_lookup_table_ix, _lookup_table_address) =
+        solana_sdk::address_lookup_table::instruction::create_lookup_table(
+            mint_keypair.pubkey(),
+            mint_keypair.pubkey(),
+            0,
+        );
+
+    // simple transfer without setting cu-limit should success with no adjustment
+    {
+        let expected = TestResult {
+            cost_adjustment: 0,
+            execution_status: Ok(()),
+        };
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[transfer_ix.clone()]),
+            expected
+        );
+    }
+
+    // simple transfer and lower cu-limit should fail execution, and no adjustment (as used all
+    // requested CU)
+    // Better, such transaction should fail at sanitization, save from executing all together.
+    {
+        let expected = TestResult {
+            cost_adjustment: 0,
+            execution_status: Err(TransactionError::InstructionError(
+                0,
+                InstructionError::ComputationalBudgetExceeded,
+            )),
+        };
+        // Current inconsistent behavior:
+        //   cost model ignores set_cu_limit due to no user space ix, estimating cost for two
+        //   builtin ixs.
+        //   budget allocate honor cu-limit, allocate 1 for transfer, execute and consume 1 cu
+        let now_behavior = TestResult {
+            cost_adjustment: solana_system_program::system_processor::DEFAULT_COMPUTE_UNITS as i64
+                + solana_compute_budget_program::DEFAULT_COMPUTE_UNITS as i64
+                - 1,
+            execution_status: Err(TransactionError::InstructionError(
+                0,
+                InstructionError::ComputationalBudgetExceeded,
+            )),
+        };
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[
+                transfer_ix.clone(),
+                set_cu_limit_low_ix.clone()
+            ]),
+            now_behavior
+        );
+    }
+
+    // simple transfer and high cu-limit should success and positive adjustment (eg adjust down)
+    {
+        let expected = TestResult {
+            cost_adjustment: 500_000 as i64
+                - solana_system_program::system_processor::DEFAULT_COMPUTE_UNITS as i64
+                - solana_compute_budget_program::DEFAULT_COMPUTE_UNITS as i64,
+            execution_status: Ok(()),
+        };
+        // Current inconsistent behavior:
+        //   cost model ignores set_cu_limit due to no user space ix, estimating cost for two
+        //   builtin ixs
+        //   budget allocate 200K (excluding cb_ix) for transfer, execute and consume both cost,
+        //   results no adjustment
+        let now_behavior = TestResult {
+            cost_adjustment: 0,
+            execution_status: Ok(()),
+        };
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[
+                transfer_ix.clone(),
+                set_cu_limit_high_ix.clone()
+            ]),
+            now_behavior
+        );
+    }
+
+    // transfer + memo that consumes more CU than default
+    // Should fail due to exceed budget, and no adjustment (due to consumed all requested CU)
+    {
+        let expected = TestResult {
+            cost_adjustment: 0,
+            execution_status: Err(TransactionError::InstructionError(
+                1,
+                InstructionError::ComputationalBudgetExceeded,
+            )),
+        };
+        // Current wrong behavior:
+        //   cost model estimates cost as default (for memo) + 150 (transfer)
+        //   compute budget allocated 200K for each ix, total 400K. transfer consumes 150, leave
+        //   399_850 for memo, which is > 200_000; it succeeds execution. total consumed more than
+        //   estimated, results adjust-up
+        let now_behavior = TestResult {
+            cost_adjustment: 200_000_i64 - memo_ix_cost as i64,
+            execution_status: Ok(()),
+        };
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[transfer_ix.clone(), memo_ix.clone()]),
+            now_behavior
+        );
+    }
+
+    // transfer + memo and lower cu-limit
+    // Should fail due to exceed budget, and no adjustment (due to consumed all requested CU)
+    // better: shoudl fail this tx at sanitization, save executino all together
+    {
+        let expected = TestResult {
+            cost_adjustment: 0,
+            execution_status: Err(TransactionError::InstructionError(
+                0,
+                InstructionError::ComputationalBudgetExceeded,
+            )),
+        };
+        // Current behavior that matches expectation:
+        //   cost model estimates cost by cu-limit since memo is a user space ix
+        //   compute budget also honor cu-limit. Execution fails on first ix due to exceeding
+        //   budget.
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[transfer_ix.clone(), memo_ix.clone(), set_cu_limit_low_ix.clone()]),
+            expected
+        );
+    }
+
+    // transfer + memo and higher cu-limit
+    // Should succeed in execution, then adjust down cost
+    {
+        let expected = TestResult {
+            cost_adjustment: 500_000 - memo_ix_cost as i64 - solana_system_program::system_processor::DEFAULT_COMPUTE_UNITS as i64
+                - solana_compute_budget_program::DEFAULT_COMPUTE_UNITS as i64,
+            execution_status: Ok(()),
+        };
+        // Current behavior that matches expectation:
+        //   cost model estimates cost by cu-limit since memo is a user space ix
+        //   compute budget also honor cu-limit. Execution succeeds, with actual execution cost
+        //   lower than budget.
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[transfer_ix.clone(), memo_ix.clone(), set_cu_limit_high_ix.clone()]),
+            expected
+        );
+    }
+
+    // Create ATL account (which CPIs into System) only, should fail due to exceeds budget (cuz
+    // the CPI-ed ixs are not visible to both cost model and compute budget.
+    //*
+    {
+        let expected = TestResult {
+            cost_adjustment: 0,
+            execution_status: Err(TransactionError::InstructionError(
+                0,
+                InstructionError::ComputationalBudgetExceeded,
+            )),
+        };
+        // Current inconsistent behavior:
+        //   cost model estimates cost 750 for ALT ix
+        //   compute budget allocate 200K for tx, actual execution consumes = atl
+        //   + 3*system = 750 + 450 = 1200, well below 200K allocation, succeeds. result
+        //   adjust-up
+        let now_behavior = TestResult {
+            cost_adjustment: 750 - 1200,
+            execution_status: Ok(()),
+        };
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[
+                create_lookup_table_ix.clone(),
+            ]),
+            now_behavior
+        );
+    }
+    // */
+
+    // Create ATL account (which CPIs into System) + set cu-limit low, should fail
+    // executed, consume all cu-limit, no adjustment
+    // better: fail this tx at sanitization, save from execution all together
+    //*
+    {
+        let expected = TestResult {
+            cost_adjustment: 0,
+            execution_status: Err(TransactionError::InstructionError(
+                0,
+                InstructionError::ComputationalBudgetExceeded,
+            )),
+        };
+        // Current inconsistent behavior:
+        //   cost model ignore cu-limit due to no user space ix, estimates 750 + 150 = 900
+        //   compute budget hornor cu-limit, actual execution would consumes = atl
+        //   + 3*system + cb = 750 + 450 + 150 = 1350, well above cu-limit 1, so the actual
+        //   execution cost is 1, adjust-down
+        let now_behavior = TestResult {
+            cost_adjustment: 900 - 1,
+            execution_status: Err(TransactionError::InstructionError(
+                0,
+                InstructionError::ComputationalBudgetExceeded,
+            )),
+        };
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[
+                create_lookup_table_ix.clone(),
+                set_cu_limit_low_ix
+            ]),
+            now_behavior
+        );
+    }
+    // */
+
+    // Create ATL account (which CPIs into System) + set cu-limit high, should successfully
+    // executed, then adjust down
+    //*
+    {
+        let expected = TestResult {
+            cost_adjustment: 500_000 - 1350,
+            execution_status: Ok(()),
+        };
+        // Current inconsistent behavior:
+        //   cost model ignore cu-limit due to no user space ix, estimates 750 + 150 = 900
+        //   compute budget hornor cu-limit of 500K, actual execution consumes = atl
+        //   + 3*system + cb = 750 + 450 + 150 = 1350, well below 500K allocation, succeeds. result
+        //   adjust-up
+        let now_behavior = TestResult {
+            cost_adjustment: 900 - 1350,
+            execution_status: Ok(()),
+        };
+        assert_eq!(
+            execute_transaction_get_unit_adjustment(&[
+                create_lookup_table_ix,
+                set_cu_limit_high_ix
+            ]),
+            now_behavior
+        );
+    }
+    // */
 }

@@ -13363,7 +13363,7 @@ fn test_builtin_ix_cost_adjustment_with_cu_limit_too_low() {
     //   builtin ixs.
     //   compute budget honors set-cu-limit, execute tx, consume all allocated cu then fail.
     // Cost tracker need to be adjusted down unnecessarily.
-    assert_ne!(
+    assert_eq!(
         test_setup.execute_test_transaction(&[
             test_setup.transfer_ix(),
             test_setup.set_cu_limit_ix(cu_limit),
@@ -13391,7 +13391,7 @@ fn test_builtin_ix_cost_adjustment_with_cu_limit_high() {
     //   builtin ixs.
     //   compute budget honors set-cu-limit, execute tx successfully, consume CUs for both ixs.
     // It conveniently requires no cost adjustment.
-    assert_ne!(
+    assert_eq!(
         test_setup.execute_test_transaction(&[
             test_setup.transfer_ix(),
             test_setup.set_cu_limit_ix(cu_limit),
@@ -13422,7 +13422,7 @@ fn test_builtin_ix_cost_adjustment_with_memo_no_cu_limit() {
     //   399_850 for memo, which is 356_963; it'd succeed execution, after consumed total
     //   (256_963 + 150) CUs.
     // Cost tracker needs to be significantly adjusted up
-    assert_ne!(
+    assert_eq!(
         test_setup.execute_test_transaction(&[test_setup.transfer_ix(), memo_ix]),
         expected
     );
@@ -13448,7 +13448,7 @@ fn test_builtin_ix_cost_adjustment_with_alt_no_cu_limit() {
     //   compute budget allocate 200K for tx, actual execution consumes = 1 * atl
     //   + 3*system = 750 + 450 = 1200, well below 200K allocation, succeeds.
     // Cost tracker has to be adjusted up
-    assert_ne!(
+    assert_eq!(
         test_setup.execute_test_transaction(&[test_setup.create_lookup_table_ix(),]),
         expected,
     );
@@ -13474,7 +13474,7 @@ fn test_builtin_ix_cost_adjustment_with_alt_and_cu_limit_high() {
     //   compute budget honors cu-limit, actual execution consumes = lookup_table
     //   + 3*system + compute_budget = 750 + 450 + 150 = 1350, well below 500K allocation, succeeds.
     // Cost Tracker needs to be adjusted up by (900 - 1_350) CU
-    assert_ne!(
+    assert_eq!(
         test_setup.execute_test_transaction(&[
             test_setup.create_lookup_table_ix(),
             test_setup.set_cu_limit_ix(cu_limit),

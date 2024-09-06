@@ -13433,14 +13433,10 @@ fn test_builtin_ix_cost_adjustment_with_alt_no_cu_limit() {
     let test_setup = TestSetup::new();
 
     // Create lookup_table (which CPIs into System ixs) without explicitly request more CUs,
-    // because the CPI-ed ixs are not visible to both cost model and compute budget, transaction
-    // shall fail due to exceeds budget.
+    // it should succeed without cost adjustment
     let expected = TestResult {
         cost_adjustment: 0,
-        execution_status: Err(TransactionError::InstructionError(
-            0,
-            InstructionError::ComputationalBudgetExceeded,
-        )),
+        execution_status: Ok(()),
     };
 
     // Current inconsistent behavior:

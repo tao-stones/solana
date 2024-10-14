@@ -163,9 +163,7 @@ impl CostModel {
         // if failed to process compute_budget instructions, the transaction will not be executed
         // by `bank`, therefore it should be considered as no execution cost by cost model.
         let (programs_execution_costs, loaded_accounts_data_size_cost) =
-            match process_compute_budget_instructions(
-                transaction.program_instructions_iter(),
-            ) {
+            match process_compute_budget_instructions(transaction.program_instructions_iter()) {
                 Ok(compute_budget_limits) => (
                     u64::from(compute_budget_limits.compute_unit_limit),
                     Self::calculate_loaded_accounts_data_size_cost(
@@ -788,7 +786,11 @@ mod tests {
         let expected_cost = 2 * u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_estimated_execution_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
+        CostModel::get_estimated_execution_cost(
+            &mut tx_cost,
+            &transaction,
+            &FeatureSet::all_enabled(),
+        );
 
         assert_eq!(expected_cost, tx_cost.programs_execution_cost);
     }
@@ -811,7 +813,11 @@ mod tests {
         let expected_cost: u64 = 12_345;
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_estimated_execution_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
+        CostModel::get_estimated_execution_cost(
+            &mut tx_cost,
+            &transaction,
+            &FeatureSet::all_enabled(),
+        );
 
         assert_eq!(expected_cost, tx_cost.programs_execution_cost);
     }

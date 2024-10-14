@@ -7,7 +7,6 @@
 
 use {
     crate::{block_cost_limits::*, transaction_cost::*},
-    log::*,
     solana_compute_budget::compute_budget_limits::DEFAULT_HEAP_COST,
     solana_feature_set::{self as feature_set, FeatureSet},
     solana_runtime_transaction::instructions_processor::process_compute_budget_instructions,
@@ -474,10 +473,6 @@ mod tests {
         let simple_transaction = SanitizedTransaction::from_transaction_for_tests(
             system_transaction::transfer(&mint_keypair, &keypair.pubkey(), 2, start_hash),
         );
-        debug!(
-            "system_transaction simple_transaction {:?}",
-            simple_transaction
-        );
 
         // expected cost for one system transfer instructions
         let expected_execution_cost = u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
@@ -508,7 +503,6 @@ mod tests {
             instructions,
         );
         let token_transaction = SanitizedTransaction::from_transaction_for_tests(tx);
-        debug!("token_transaction {:?}", token_transaction);
 
         let mut tx_cost = UsageCostDetails::default();
         CostModel::get_estimated_execution_cost(
@@ -643,7 +637,6 @@ mod tests {
             message,
             start_hash,
         ));
-        debug!("many transfer transaction {:?}", tx);
 
         // expected cost for two system transfer instructions
         let program_cost = u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
@@ -677,7 +670,6 @@ mod tests {
                 instructions,
             ),
         );
-        debug!("many random transaction {:?}", tx);
 
         let expected_cost = DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT as u64 * 2;
         let mut tx_cost = UsageCostDetails::default();

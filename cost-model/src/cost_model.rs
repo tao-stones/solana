@@ -770,7 +770,8 @@ mod tests {
 
         let feature_set = FeatureSet::all_enabled();
         let expected_account_cost = WRITE_LOCK_UNITS * 2;
-        let expected_execution_cost = 2 * u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
+        // compute budget instruction does not have execution cost
+        let expected_execution_cost = u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
         let expected_loaded_accounts_data_size_cost = (data_limit as u64) / (32 * 1024) * 8;
 
         let tx_cost = CostModel::calculate_cost(&tx, &feature_set);

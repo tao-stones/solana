@@ -50,11 +50,12 @@ impl CostModel {
 
             Self::get_signature_cost(&mut tx_cost, transaction, feature_set);
             Self::get_write_lock_cost(&mut tx_cost, transaction, feature_set);
-            Self::get_transaction_cost(&mut tx_cost, transaction, feature_set);
+            Self::get_instructions_data_cost(&mut tx_cost, transaction);
             tx_cost.allocated_accounts_data_size =
                 Self::calculate_allocated_accounts_data_size(transaction);
 
-            debug!("transaction {:?} has cost {:?}", transaction, tx_cost);
+            Self::get_estimated_execution_cost(&mut tx_cost, transaction, feature_set);
+
             TransactionCost::Transaction(tx_cost)
         }
     }
@@ -155,17 +156,11 @@ impl CostModel {
         tx_cost.write_lock_cost = WRITE_LOCK_UNITS.saturating_mul(num_write_locks);
     }
 
-    fn get_transaction_cost(
+    fn get_estimated_execution_cost(
         tx_cost: &mut UsageCostDetails,
         transaction: &impl SVMMessage,
         feature_set: &FeatureSet,
     ) {
-        let mut data_bytes_len_total = 0u64;
-        for (_program_id, instruction) in transaction.program_instructions_iter() {
-            data_bytes_len_total =
-                data_bytes_len_total.saturating_add(instruction.data.len() as u64);
-        }
-
         // if failed to process compute_budget instructions, the transaction will not be executed
         // by `bank`, therefore it should be considered as no execution cost by cost model.
         let (programs_execution_costs, loaded_accounts_data_size_cost) =
@@ -184,7 +179,6 @@ impl CostModel {
 
         tx_cost.programs_execution_cost = programs_execution_costs;
         tx_cost.loaded_accounts_data_size_cost = loaded_accounts_data_size_cost;
-        tx_cost.data_bytes_cost = data_bytes_len_total / INSTRUCTION_DATA_BYTES_COST;
     }
 
     fn get_instructions_data_cost(
@@ -489,7 +483,7 @@ mod tests {
         let expected_execution_cost = u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(
+        CostModel::get_estimated_execution_cost(
             &mut tx_cost,
             &simple_transaction,
             &FeatureSet::all_enabled(),
@@ -517,7 +511,7 @@ mod tests {
         debug!("token_transaction {:?}", token_transaction);
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(
+        CostModel::get_estimated_execution_cost(
             &mut tx_cost,
             &token_transaction,
             &FeatureSet::all_enabled(),
@@ -582,7 +576,7 @@ mod tests {
         let token_transaction = SanitizedTransaction::from_transaction_for_tests(tx);
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(
+        CostModel::get_estimated_execution_cost(
             &mut tx_cost,
             &token_transaction,
             &FeatureSet::all_enabled(),
@@ -627,7 +621,7 @@ mod tests {
         let token_transaction = SanitizedTransaction::from_transaction_for_tests(tx);
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(
+        CostModel::get_estimated_execution_cost(
             &mut tx_cost,
             &token_transaction,
             &FeatureSet::all_enabled(),
@@ -656,7 +650,7 @@ mod tests {
         let expected_cost = program_cost * 2;
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(&mut tx_cost, &tx, &FeatureSet::all_enabled());
+        CostModel::get_estimated_execution_cost(&mut tx_cost, &tx, &FeatureSet::all_enabled());
         assert_eq!(expected_cost, tx_cost.programs_execution_cost);
         assert_eq!(6, tx_cost.data_bytes_cost);
     }
@@ -687,7 +681,7 @@ mod tests {
 
         let expected_cost = DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT as u64 * 2;
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(&mut tx_cost, &tx, &FeatureSet::all_enabled());
+        CostModel::get_estimated_execution_cost(&mut tx_cost, &tx, &FeatureSet::all_enabled());
         assert_eq!(expected_cost, tx_cost.programs_execution_cost);
         assert_eq!(0, tx_cost.data_bytes_cost);
     }
@@ -802,7 +796,7 @@ mod tests {
         let expected_cost = 2 * u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
+        CostModel::get_estimated_execution_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
 
         assert_eq!(expected_cost, tx_cost.programs_execution_cost);
     }
@@ -825,7 +819,7 @@ mod tests {
         let expected_cost: u64 = 12_345;
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_transaction_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
+        CostModel::get_estimated_execution_cost(&mut tx_cost, &transaction, &FeatureSet::all_enabled());
 
         assert_eq!(expected_cost, tx_cost.programs_execution_cost);
     }

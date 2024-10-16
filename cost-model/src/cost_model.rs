@@ -466,6 +466,7 @@ mod tests {
     #[test]
     fn test_cost_model_simple_transaction() {
         let (mint_keypair, start_hash) = test_setup();
+        let feature_set = FeatureSet::all_enabled();
 
         let keypair = Keypair::new();
         let simple_transaction = SanitizedTransaction::from_transaction_for_tests(
@@ -474,15 +475,18 @@ mod tests {
 
         // expected cost for one system transfer instructions
         let expected_execution_cost = u64::from(DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT);
+        let expected_loaded_accounts_cost = CostModel::calculate_loaded_accounts_data_size_cost(
+            solana_compute_budget::compute_budget_limits::MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get(),
+            &feature_set,
+        );
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_estimated_execution_cost(
-            &mut tx_cost,
-            &simple_transaction,
-            &FeatureSet::all_enabled(),
-        );
+        CostModel::get_estimated_execution_cost(&mut tx_cost, &simple_transaction, &feature_set);
         assert_eq!(expected_execution_cost, tx_cost.programs_execution_cost);
-        assert_eq!(3, tx_cost.data_bytes_cost);
+        assert_eq!(
+            expected_loaded_accounts_cost,
+            tx_cost.loaded_accounts_data_size_cost
+        );
     }
 
     #[test]
@@ -544,12 +548,18 @@ mod tests {
     #[test]
     fn test_cost_model_compute_budget_transaction() {
         let (mint_keypair, start_hash) = test_setup();
+        let feature_set = FeatureSet::all_enabled();
+        let expected_cu_limit = 12_345;
+        let expected_loaded_accounts_cost = CostModel::calculate_loaded_accounts_data_size_cost(
+            solana_compute_budget::compute_budget_limits::MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get(),
+            &feature_set,
+        );
 
         let instructions = vec![
             CompiledInstruction::new(3, &(), vec![1, 2, 0]),
             CompiledInstruction::new_from_raw_parts(
                 4,
-                ComputeBudgetInstruction::SetComputeUnitLimit(12_345)
+                ComputeBudgetInstruction::SetComputeUnitLimit(expected_cu_limit)
                     .pack()
                     .unwrap(),
                 vec![],
@@ -568,14 +578,13 @@ mod tests {
         let token_transaction = SanitizedTransaction::from_transaction_for_tests(tx);
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_estimated_execution_cost(
-            &mut tx_cost,
-            &token_transaction,
-            &FeatureSet::all_enabled(),
-        );
+        CostModel::get_estimated_execution_cost(&mut tx_cost, &token_transaction, &feature_set);
         // If cu-limit is specified, that would the cost for all programs
-        assert_eq!(12_345, tx_cost.programs_execution_cost);
-        assert_eq!(1, tx_cost.data_bytes_cost);
+        assert_eq!(expected_cu_limit as u64, tx_cost.programs_execution_cost);
+        assert_eq!(
+            expected_loaded_accounts_cost,
+            tx_cost.loaded_accounts_data_size_cost
+        );
     }
 
     #[test]
@@ -624,6 +633,11 @@ mod tests {
     #[test]
     fn test_cost_model_transaction_many_transfer_instructions() {
         let (mint_keypair, start_hash) = test_setup();
+        let feature_set = FeatureSet::all_enabled();
+        let expected_loaded_accounts_cost = CostModel::calculate_loaded_accounts_data_size_cost(
+            solana_compute_budget::compute_budget_limits::MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES.get(),
+            &feature_set,
+        );
 
         let key1 = solana_sdk::pubkey::new_rand();
         let key2 = solana_sdk::pubkey::new_rand();
@@ -641,9 +655,12 @@ mod tests {
         let expected_cost = program_cost * 2;
 
         let mut tx_cost = UsageCostDetails::default();
-        CostModel::get_estimated_execution_cost(&mut tx_cost, &tx, &FeatureSet::all_enabled());
+        CostModel::get_estimated_execution_cost(&mut tx_cost, &tx, &feature_set);
         assert_eq!(expected_cost, tx_cost.programs_execution_cost);
-        assert_eq!(6, tx_cost.data_bytes_cost);
+        assert_eq!(
+            expected_loaded_accounts_cost,
+            tx_cost.loaded_accounts_data_size_cost
+        );
     }
 
     #[test]

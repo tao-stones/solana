@@ -1045,7 +1045,7 @@ mod tests {
                     &Keypair::new(),
                     &Pubkey::new_unique(),
                     1,
-                    i * 10,
+                    i * 10_000,
                     bank.last_blockhash(),
                 )
             })

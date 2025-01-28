@@ -50,6 +50,14 @@ pub struct ComputeBudgetInstructionDetails {
     migrating_builtin_feature_counters: MigrationBuiltinFeatureCounter,
 }
 
+// add pub access to raw Cb fields
+impl ComputeBudgetInstructionDetails {
+    pub fn requested_loaded_accounts_data_size_limit(&self) -> Option<u32> {
+        self.requested_loaded_accounts_data_size_limit
+            .map(|(_, v)| v)
+    }
+}
+
 impl ComputeBudgetInstructionDetails {
     pub fn try_from<'a>(
         instructions: impl Iterator<Item = (&'a Pubkey, SVMInstruction<'a>)> + Clone,

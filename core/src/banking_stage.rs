@@ -66,10 +66,13 @@ pub mod leader_slot_metrics;
 pub mod qos_service;
 pub mod unprocessed_packet_batches;
 pub mod unprocessed_transaction_storage;
+// made public for benching scheduler
+pub mod scheduler_messages;
+pub mod transaction_scheduler;
 
 mod consume_worker;
 mod decision_maker;
-mod immutable_deserialized_packet;
+pub mod immutable_deserialized_packet;
 mod latest_unprocessed_votes;
 mod leader_slot_timing_metrics;
 mod multi_iterator_scanner;
@@ -77,8 +80,6 @@ mod packet_deserializer;
 mod packet_filter;
 mod packet_receiver;
 mod read_write_account_set;
-mod scheduler_messages;
-mod transaction_scheduler;
 
 // proc_macro_hygiene needs to be stabilzied to use qualifier_attr...
 // error[E0658]: non-inline modules in proc macro input are unstable
@@ -90,7 +91,7 @@ pub mod unified_scheduler;
 // Fixed thread size seems to be fastest on GCP setup
 pub const NUM_THREADS: u32 = 6;
 
-const TOTAL_BUFFERED_PACKETS: usize = 100_000;
+pub const TOTAL_BUFFERED_PACKETS: usize = 100_000;
 
 const NUM_VOTE_PROCESSING_THREADS: u32 = 2;
 const MIN_THREADS_BANKING: u32 = 1;

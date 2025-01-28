@@ -42,7 +42,7 @@ type SchedulerPrioGraph = PrioGraph<
     fn(&TransactionPriorityId, &GraphNode<TransactionPriorityId>) -> TransactionPriorityId,
 >;
 
-pub(crate) struct PrioGraphSchedulerConfig {
+pub struct PrioGraphSchedulerConfig {
     pub max_scheduled_cus: u64,
     pub max_scanned_transactions_per_scheduling_pass: usize,
     pub look_ahead_window_size: usize,
@@ -60,7 +60,7 @@ impl Default for PrioGraphSchedulerConfig {
     }
 }
 
-pub(crate) struct PrioGraphScheduler<Tx> {
+pub struct PrioGraphScheduler<Tx> {
     in_flight_tracker: InFlightTracker,
     account_locks: ThreadAwareAccountLocks,
     consume_work_senders: Vec<Sender<ConsumeWork<Tx>>>,
@@ -70,7 +70,7 @@ pub(crate) struct PrioGraphScheduler<Tx> {
 }
 
 impl<Tx: TransactionWithMeta> PrioGraphScheduler<Tx> {
-    pub(crate) fn new(
+    pub fn new(
         consume_work_senders: Vec<Sender<ConsumeWork<Tx>>>,
         finished_consume_work_receiver: Receiver<FinishedConsumeWork<Tx>>,
         config: PrioGraphSchedulerConfig,
@@ -104,7 +104,7 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
     /// This, combined with internal tracking of threads' in-flight transactions, allows
     /// for load-balancing while prioritizing scheduling transactions onto threads that will
     /// not cause conflicts in the near future.
-    fn schedule<S: StateContainer<Tx>>(
+    pub fn schedule<S: StateContainer<Tx>>(
         &mut self,
         container: &mut S,
         pre_graph_filter: impl Fn(&[&Tx], &mut [bool]),
@@ -296,6 +296,8 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
 
         // Send batches for any remaining transactions
         saturating_add_assign!(num_sent, self.send_batches(&mut batches)?);
+
+println!("schedule finished; batches sent {}, unscheduleable_ids: {:?}", num_sent, unschedulable_ids);
 
         // Push unschedulable ids back into the container
         container.push_ids_into_queue(unschedulable_ids.into_iter());

@@ -108,7 +108,9 @@ tokio = { workspace = true, features = ["full"] }
 trees = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 fs_extra = { workspace = true }
+jemallocator = { workspace = true }
 serde_json = { workspace = true }
 serial_test = { workspace = true }
 # See order-crates-for-publishing.py for using this unusual `path = "."`
@@ -170,6 +172,10 @@ name = "gen_keys"
 
 [[bench]]
 name = "sigverify_stage"
+
+[[bench]]
+name = "prio_graph_scheduler"
+harness = false
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

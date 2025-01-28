@@ -40,13 +40,13 @@ use {
 ///
 /// The container maintains a fixed capacity. If the queue is full when pushing
 /// a new transaction, the lowest priority transaction will be dropped.
-pub(crate) struct TransactionStateContainer<Tx: TransactionWithMeta> {
+pub struct TransactionStateContainer<Tx: TransactionWithMeta> {
     capacity: usize,
     priority_queue: MinMaxHeap<TransactionPriorityId>,
     id_to_transaction_state: Slab<TransactionState<Tx>>,
 }
 
-pub(crate) trait StateContainer<Tx: TransactionWithMeta> {
+pub trait StateContainer<Tx: TransactionWithMeta> {
     /// Create a new `TransactionStateContainer` with the given capacity.
     fn with_capacity(capacity: usize) -> Self;
 
@@ -173,7 +173,7 @@ impl<Tx: TransactionWithMeta> StateContainer<Tx> for TransactionStateContainer<T
 impl<Tx: TransactionWithMeta> TransactionStateContainer<Tx> {
     /// Insert a new transaction into the container's queues and maps.
     /// Returns `true` if a packet was dropped due to capacity limits.
-    pub(crate) fn insert_new_transaction(
+    pub fn insert_new_transaction(
         &mut self,
         transaction_ttl: SanitizedTransactionTTL<Tx>,
         priority: u64,

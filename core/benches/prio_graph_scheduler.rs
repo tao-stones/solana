@@ -6,6 +6,7 @@ use {
         immutable_deserialized_packet::ImmutableDeserializedPacket,
         scheduler_messages::{ConsumeWork, FinishedConsumeWork, MaxAge},
         transaction_scheduler::{
+            greedy_scheduler::{GreedyScheduler, GreedySchedulerConfig},
             prio_graph_scheduler::{PrioGraphScheduler, PrioGraphSchedulerConfig},
             scheduler::Scheduler,
             transaction_state::SanitizedTransactionTTL,
@@ -363,12 +364,12 @@ fn bench_empty_container(c: &mut Criterion) {
     stats.print_and_reset();
 }
 
-fn bench_non_contend_transactions(c: &mut Criterion) {
+fn bench_prio_graph_non_contend_transactions(c: &mut Criterion) {
     let capacity = TOTAL_BUFFERED_PACKETS;
     let mut stats = BenchStats::default();
     let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
 
-    c.benchmark_group("bench_non_contend_transactions")
+    c.benchmark_group("bench_prio_graph_non_contend_transactions")
         .sample_size(10)
         .bench_function("sdk_transaction_type", |bencher| {
             bencher.iter_with_setup(
@@ -393,12 +394,12 @@ fn bench_non_contend_transactions(c: &mut Criterion) {
     stats.print_and_reset();
 }
 
-fn bench_fully_contend_transactions(c: &mut Criterion) {
+fn bench_prio_graph_fully_contend_transactions(c: &mut Criterion) {
     let capacity = TOTAL_BUFFERED_PACKETS;
     let mut stats = BenchStats::default();
     let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
 
-    c.benchmark_group("bench_fully_contend_transactions")
+    c.benchmark_group("bench_prio_graph_fully_contend_transactions")
         .sample_size(10)
         .bench_function("sdk_transaction_type", |bencher| {
             bencher.iter_with_setup(
@@ -423,10 +424,72 @@ fn bench_fully_contend_transactions(c: &mut Criterion) {
     stats.print_and_reset();
 }
 
+fn bench_greedy_non_contend_transactions(c: &mut Criterion) {
+    let capacity = TOTAL_BUFFERED_PACKETS;
+    let mut stats = BenchStats::default();
+    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
+
+    c.benchmark_group("bench_greedy_non_contend_transactions")
+        .sample_size(10)
+        .bench_function("sdk_transaction_type", |bencher| {
+            bencher.iter_with_setup(
+                || {
+                    let mut bench_container = BenchContainer::new(capacity);
+                    bench_container
+                        .fill_container(build_non_contend_transactions(capacity).into_iter());
+                    let scheduler = GreedyScheduler::new(
+                        bench_env.consume_work_senders.clone(),
+                        bench_env.finished_consume_work_receiver.clone(),
+                        GreedySchedulerConfig::default(),
+                    );
+                    (scheduler, bench_container.container)
+                },
+                |(scheduler, container)| {
+                    black_box(bench_env.run(scheduler, container, &mut stats));
+                    //stats.print_and_reset();
+                },
+            )
+        });
+
+    stats.print_and_reset();
+}
+
+fn bench_greedy_fully_contend_transactions(c: &mut Criterion) {
+    let capacity = TOTAL_BUFFERED_PACKETS;
+    let mut stats = BenchStats::default();
+    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
+
+    c.benchmark_group("bench_greedy_fully_contend_transactions")
+        .sample_size(10)
+        .bench_function("sdk_transaction_type", |bencher| {
+            bencher.iter_with_setup(
+                || {
+                    let mut bench_container = BenchContainer::new(capacity);
+                    bench_container
+                        .fill_container(build_fully_contend_transactions(capacity).into_iter());
+                    let scheduler = GreedyScheduler::new(
+                        bench_env.consume_work_senders.clone(),
+                        bench_env.finished_consume_work_receiver.clone(),
+                        GreedySchedulerConfig::default(),
+                    );
+                    (scheduler, bench_container.container)
+                },
+                |(scheduler, container)| {
+                    black_box(bench_env.run(scheduler, container, &mut stats));
+                    //stats.print_and_reset();
+                },
+            )
+        });
+
+    stats.print_and_reset();
+}
+
 criterion_group!(
     benches,
     bench_empty_container,
-    bench_non_contend_transactions,
-    bench_fully_contend_transactions,
+    bench_prio_graph_non_contend_transactions,
+    bench_prio_graph_fully_contend_transactions,
+    bench_greedy_non_contend_transactions,
+    bench_greedy_fully_contend_transactions,
 );
 criterion_main!(benches);

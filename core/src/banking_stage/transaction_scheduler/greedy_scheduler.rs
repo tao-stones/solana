@@ -24,7 +24,7 @@ use {
     solana_sdk::saturating_add_assign,
 };
 
-pub(crate) struct GreedySchedulerConfig {
+pub struct GreedySchedulerConfig {
     pub target_scheduled_cus: u64,
     pub max_scanned_transactions_per_scheduling_pass: usize,
     pub target_transactions_per_batch: usize,
@@ -54,7 +54,7 @@ pub struct GreedyScheduler<Tx: TransactionWithMeta> {
 }
 
 impl<Tx: TransactionWithMeta> GreedyScheduler<Tx> {
-    pub(crate) fn new(
+    pub fn new(
         consume_work_senders: Vec<Sender<ConsumeWork<Tx>>>,
         finished_consume_work_receiver: Receiver<FinishedConsumeWork<Tx>>,
         config: GreedySchedulerConfig,

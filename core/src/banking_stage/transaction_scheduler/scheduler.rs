@@ -3,7 +3,7 @@ use {
     solana_runtime_transaction::transaction_with_meta::TransactionWithMeta,
 };
 
-pub(crate) trait Scheduler<Tx: TransactionWithMeta> {
+pub trait Scheduler<Tx: TransactionWithMeta> {
     /// Schedule transactions from `container`.
     /// pre-graph and pre-lock filters may be passed to be applied
     /// before specific actions internally.
@@ -24,7 +24,7 @@ pub(crate) trait Scheduler<Tx: TransactionWithMeta> {
 
 /// Metrics from scheduling transactions.
 #[derive(Default, Debug, PartialEq, Eq)]
-pub(crate) struct SchedulingSummary {
+pub struct SchedulingSummary {
     /// Number of transactions scheduled.
     pub num_scheduled: usize,
     /// Number of transactions that were not scheduled due to conflicts.

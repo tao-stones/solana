@@ -8,6 +8,7 @@ use {
         scheduler_messages::{ConsumeWork, FinishedConsumeWork, MaxAge},
         transaction_scheduler::{
             prio_graph_scheduler::{PrioGraphScheduler, PrioGraphSchedulerConfig},
+            scheduler::Scheduler,
             transaction_state::SanitizedTransactionTTL,
             transaction_state_container::{StateContainer, TransactionStateContainer},
         },
@@ -85,8 +86,6 @@ fn build_non_contend_transactions(count: usize) -> Vec<RuntimeTransaction<Saniti
         transactions.push(transaction);
     }
 
-println!("prep non-contend txs: {:?}", transactions.len());
-
     transactions
 }
 
@@ -113,8 +112,6 @@ fn build_fully_contend_transactions(count: usize) -> Vec<RuntimeTransaction<Sani
 
         transactions.push(transaction);
     }
-
-println!("prep full-contend txs: {:?}", transactions.len());
 
     transactions
 }
@@ -174,12 +171,10 @@ impl<Tx: TransactionWithMeta> BenchContainer<Tx> {
                 compute_unit_price,
                 TEST_TRANSACTION_COST,
             ) {
-                assert!(false);
-                println!("fail fill container: remaining cap {:?}, nth {:?}", self.container.remaining_capacity(), n);
+                unreachable!("test is setup to fill the Container to fullness");
             }
             n += 1;
         }
-        println!("==== inserted {} transactions to container ====", n);
     }
 }
 
@@ -414,8 +409,8 @@ fn bench_fully_contend_transactions(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-//    bench_empty_container,
-//    bench_non_contend_transactions,
+    bench_empty_container,
+    bench_non_contend_transactions,
     bench_fully_contend_transactions,
 );
 criterion_main!(benches);

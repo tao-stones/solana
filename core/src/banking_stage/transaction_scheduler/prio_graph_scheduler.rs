@@ -104,7 +104,7 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
     /// This, combined with internal tracking of threads' in-flight transactions, allows
     /// for load-balancing while prioritizing scheduling transactions onto threads that will
     /// not cause conflicts in the near future.
-    pub fn schedule<S: StateContainer<Tx>>(
+    fn schedule<S: StateContainer<Tx>>(
         &mut self,
         container: &mut S,
         pre_graph_filter: impl Fn(&[&Tx], &mut [bool]),
@@ -296,8 +296,6 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
 
         // Send batches for any remaining transactions
         saturating_add_assign!(num_sent, self.send_batches(&mut batches)?);
-
-println!("schedule finished; batches sent {}, unscheduleable_ids: {:?}", num_sent, unschedulable_ids);
 
         // Push unschedulable ids back into the container
         container.push_ids_into_queue(unschedulable_ids.into_iter());

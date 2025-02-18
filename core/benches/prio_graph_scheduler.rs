@@ -3,7 +3,6 @@ use {
     crossbeam_channel::{unbounded, Receiver, Sender},
     jemallocator::Jemalloc,
     solana_core::banking_stage::{
-        TOTAL_BUFFERED_PACKETS,
         immutable_deserialized_packet::ImmutableDeserializedPacket,
         scheduler_messages::{ConsumeWork, FinishedConsumeWork, MaxAge},
         transaction_scheduler::{
@@ -12,6 +11,7 @@ use {
             transaction_state::SanitizedTransactionTTL,
             transaction_state_container::{StateContainer, TransactionStateContainer},
         },
+        TOTAL_BUFFERED_PACKETS,
     },
     solana_runtime_transaction::{
         runtime_transaction::RuntimeTransaction, transaction_with_meta::TransactionWithMeta,
@@ -47,7 +47,8 @@ fn is_tracer<Tx: TransactionWithMeta + Send + Sync + 'static>(tx: &Tx) -> bool {
     )
 }
 
-// TODO - the goal is to measure the performance, and observe the behavior/pattern, of Scheduler;
+// TODO - the goal is to measure and compare performance between different Schedulers,
+// and observe the behavior/pattern of Scheduler;
 // - performance: time, througput
 // - behavior:
 //   - how many time it loops container;
@@ -142,7 +143,6 @@ impl<Tx: TransactionWithMeta> BenchContainer<Tx> {
     }
 
     fn fill_container(&mut self, transactions: impl Iterator<Item = Tx>) {
-        let mut n: usize = 0;
         for transaction in transactions {
             let compute_unit_price = transaction
                 .compute_budget_instruction_details()
@@ -173,7 +173,6 @@ impl<Tx: TransactionWithMeta> BenchContainer<Tx> {
             ) {
                 unreachable!("test is setup to fill the Container to fullness");
             }
-            n += 1;
         }
     }
 }
@@ -187,11 +186,26 @@ struct BenchStats {
     num_transaction: Arc<AtomicUsize>, // = bench_iter_count * container_capacity
     tracer_placement: Arc<AtomicUsize>, // > 0
     // from scheduler().result:
-    num_scheduled: usize,  // = num_transaction
+    num_scheduled: usize, // = num_transaction
+}
+
+impl BenchStats {
+    fn print_and_reset(&mut self) {
+        println!("{:?}", self);
+        self.num_works.swap(0, Ordering::Relaxed);
+        self.num_transaction.swap(0, Ordering::Relaxed);
+        self.tracer_placement.swap(0, Ordering::Relaxed);
+        self.bench_iter_count = 0;
+        self.num_of_scheduling = 0;
+        self.num_scheduled = 0;
+    }
 }
 
 // a bench consumer worker that quickly drain work channel, then send a OK back via completed-work
 // channel
+// NOTE: Avoid creating PingPong within bench iter since joining threads at its eol would
+// introducing variance to bench timing.
+#[allow(dead_code)]
 struct PingPong {
     threads: Vec<std::thread::JoinHandle<()>>,
 }
@@ -244,7 +258,6 @@ impl PingPong {
                 work.transactions.iter().for_each(|tx| {
                     tx_count += 1;
                     if is_tracer(tx) {
-                        println!("==== tracer found! {:?}, {:?}, {:?}", num_works.load(Ordering::Relaxed), tx_count, num_transaction.load(Ordering::Relaxed));
                         tracer_placement.store(tx_count, Ordering::Relaxed)
                     }
                 });
@@ -262,37 +275,23 @@ impl PingPong {
             }
         }
     }
-
-    fn join(self) {
-        for thread in self.threads {
-            thread.join().unwrap();
-        }
-    }
 }
 
-// setup Scheduler with bench accessories: pingpong worker, filters and status
-struct BenchSetup<Tx: TransactionWithMeta + Send + Sync + 'static> {
-    scheduler: PrioGraphScheduler<Tx>,
+struct BenchEnv<Tx: TransactionWithMeta + Send + Sync + 'static> {
     pingpong_worker: PingPong,
-    stats: BenchStats,
     filter_1: fn(&[&Tx], &mut [bool]),
     filter_2: fn(&Tx) -> bool,
+    consume_work_senders: Vec<Sender<ConsumeWork<Tx>>>,
+    finished_consume_work_receiver: Receiver<FinishedConsumeWork<Tx>>,
 }
 
-impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchSetup<Tx> {
-    fn new() -> Self {
-        let stats = BenchStats::default();
-
+impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchEnv<Tx> {
+    fn new(stats: &mut BenchStats) -> Self {
         let num_workers = 4;
 
         let (consume_work_senders, consume_work_receivers) =
             (0..num_workers).map(|_| unbounded()).unzip();
         let (finished_consume_work_sender, finished_consume_work_receiver) = unbounded();
-        let scheduler = PrioGraphScheduler::new(
-            consume_work_senders,
-            finished_consume_work_receiver,
-            PrioGraphSchedulerConfig::default(),
-        );
         let pingpong_worker = PingPong::new(
             consume_work_receivers,
             finished_consume_work_sender,
@@ -302,11 +301,11 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchSetup<Tx> {
         );
 
         Self {
-            scheduler,
             pingpong_worker,
-            stats,
             filter_1: Self::test_pre_graph_filter,
             filter_2: Self::test_pre_lock_filter,
+            consume_work_senders,
+            finished_consume_work_receiver,
         }
     }
 
@@ -318,52 +317,56 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchSetup<Tx> {
         true
     }
 
-    fn run(&mut self, mut container: TransactionStateContainer<Tx>) {
+    fn run(
+        &self,
+        mut scheduler: impl Scheduler<Tx>,
+        mut container: TransactionStateContainer<Tx>,
+        stats: &mut BenchStats,
+    ) {
         // each bench measurement is to schedule everything in the container
         while !container.is_empty() {
-            let result = self
-                .scheduler
+            let result = scheduler
                 .schedule(&mut container, self.filter_1, self.filter_2)
                 .unwrap();
 
             // do some VERY QUICK stats collecting to print/assert at end of bench
-            self.stats.num_of_scheduling += 1;
-            self.stats.num_scheduled += result.num_scheduled;
+            stats.num_of_scheduling += 1;
+            stats.num_scheduled += result.num_scheduled;
         }
 
-        self.stats.bench_iter_count += 1;
-    }
-
-    fn print_stats(self) {
-        drop(self.scheduler);
-        self.pingpong_worker.join();
-        println!("{:?}", self.stats);
+        stats.bench_iter_count += 1;
     }
 }
 
 fn bench_empty_container(c: &mut Criterion) {
-    let mut bench_setup: BenchSetup<RuntimeTransaction<SanitizedTransaction>> =
-        BenchSetup::new();
+    let mut stats = BenchStats::default();
+    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
 
     c.benchmark_group("bench_empty_container")
         .bench_function("sdk_transaction_type", |bencher| {
             bencher.iter_with_setup(
                 || {
                     let bench_container = BenchContainer::new(0);
-                    bench_container.container
+                    let scheduler = PrioGraphScheduler::new(
+                        bench_env.consume_work_senders.clone(),
+                        bench_env.finished_consume_work_receiver.clone(),
+                        PrioGraphSchedulerConfig::default(),
+                    );
+                    (scheduler, bench_container.container)
                 },
-                |container| {
-                    black_box(bench_setup.run(container));
+                |(scheduler, container)| {
+                    black_box(bench_env.run(scheduler, container, &mut stats));
+                    //stats.print_and_reset();
                 },
             )
         });
-
-    bench_setup.print_stats();
+    stats.print_and_reset();
 }
 
 fn bench_non_contend_transactions(c: &mut Criterion) {
     let capacity = TOTAL_BUFFERED_PACKETS;
-    let mut bench_setup: BenchSetup<RuntimeTransaction<SanitizedTransaction>> = BenchSetup::new();
+    let mut stats = BenchStats::default();
+    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
 
     c.benchmark_group("bench_non_contend_transactions")
         .sample_size(10)
@@ -373,20 +376,27 @@ fn bench_non_contend_transactions(c: &mut Criterion) {
                     let mut bench_container = BenchContainer::new(capacity);
                     bench_container
                         .fill_container(build_non_contend_transactions(capacity).into_iter());
-                    bench_container.container
+                    let scheduler = PrioGraphScheduler::new(
+                        bench_env.consume_work_senders.clone(),
+                        bench_env.finished_consume_work_receiver.clone(),
+                        PrioGraphSchedulerConfig::default(),
+                    );
+                    (scheduler, bench_container.container)
                 },
-                |container| {
-                    black_box(bench_setup.run(container));
+                |(scheduler, container)| {
+                    black_box(bench_env.run(scheduler, container, &mut stats));
+                    //stats.print_and_reset();
                 },
             )
         });
 
-    bench_setup.print_stats();
+    stats.print_and_reset();
 }
 
 fn bench_fully_contend_transactions(c: &mut Criterion) {
-    let capacity = 10000; //TOTAL_BUFFERED_PACKETS;
-    let mut bench_setup: BenchSetup<RuntimeTransaction<SanitizedTransaction>> = BenchSetup::new();
+    let capacity = TOTAL_BUFFERED_PACKETS;
+    let mut stats = BenchStats::default();
+    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
 
     c.benchmark_group("bench_fully_contend_transactions")
         .sample_size(10)
@@ -396,15 +406,21 @@ fn bench_fully_contend_transactions(c: &mut Criterion) {
                     let mut bench_container = BenchContainer::new(capacity);
                     bench_container
                         .fill_container(build_fully_contend_transactions(capacity).into_iter());
-                    bench_container.container
+                    let scheduler = PrioGraphScheduler::new(
+                        bench_env.consume_work_senders.clone(),
+                        bench_env.finished_consume_work_receiver.clone(),
+                        PrioGraphSchedulerConfig::default(),
+                    );
+                    (scheduler, bench_container.container)
                 },
-                |container| {
-                    black_box(bench_setup.run(container));
+                |(scheduler, container)| {
+                    black_box(bench_env.run(scheduler, container, &mut stats));
+                    //stats.print_and_reset();
                 },
             )
         });
 
-    bench_setup.print_stats();
+    stats.print_and_reset();
 }
 
 criterion_group!(

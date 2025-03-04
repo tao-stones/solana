@@ -62,21 +62,29 @@ fn is_tracer<Tx: TransactionWithMeta + Send + Sync + 'static>(tx: &Tx) -> bool {
 // TODO - transaction factory, to build container scenarios
 // - contending / competing TX with non-contend low prio tx at bottom
 // - prio distribution doesn't matter since "insert" to container will sort them
-fn build_non_contend_transactions(count: usize) -> Vec<RuntimeTransaction<SanitizedTransaction>> {
+fn build_transactions(
+    count: usize,
+    is_single_payer: bool,
+) -> Vec<RuntimeTransaction<SanitizedTransaction>> {
     let mut transactions = Vec::with_capacity(count);
     // non-contend low-prio tx is first received
     transactions.push(build_tracer_transaction());
 
     let compute_unit_price = 1_000;
-    const MAX_TRANSFERS_PER_TX: usize = 58;
+    const MAX_TRANSFERS_PER_TX: usize = 16; //58;
 
+    let single_payer = Keypair::new();
     for _n in 1..count {
-        let payer = Keypair::new();
-        let to_pubkey = Pubkey::new_unique();
-        let mut ixs = system_instruction::transfer_many(
-            &payer.pubkey(),
-            &vec![(to_pubkey, 1); MAX_TRANSFERS_PER_TX],
+        let payer = if is_single_payer {
+            // recreate keypair from single_payer
+            Keypair::from_bytes(&single_payer.to_bytes()).expect("Failed to create Keypair")
+        } else {
+            Keypair::new()
+        };
+        let to = Vec::from_iter(
+            std::iter::repeat_with(|| (Pubkey::new_unique(), 1)).take(MAX_TRANSFERS_PER_TX),
         );
+        let mut ixs = system_instruction::transfer_many(&payer.pubkey(), &to);
         let prioritization = ComputeBudgetInstruction::set_compute_unit_price(compute_unit_price);
         ixs.push(prioritization);
         let message = Message::new(&ixs, Some(&payer.pubkey()));
@@ -89,31 +97,12 @@ fn build_non_contend_transactions(count: usize) -> Vec<RuntimeTransaction<Saniti
     transactions
 }
 
+fn build_non_contend_transactions(count: usize) -> Vec<RuntimeTransaction<SanitizedTransaction>> {
+    build_transactions(count, false)
+}
+
 fn build_fully_contend_transactions(count: usize) -> Vec<RuntimeTransaction<SanitizedTransaction>> {
-    let mut transactions = Vec::with_capacity(count);
-    // non-contend low-prio tx is first received
-    transactions.push(build_tracer_transaction());
-
-    let compute_unit_price = 1_000;
-    const MAX_TRANSFERS_PER_TX: usize = 58;
-
-    let to_pubkey = Pubkey::new_unique();
-    for _n in 1..count {
-        let payer = Keypair::new();
-        let mut ixs = system_instruction::transfer_many(
-            &payer.pubkey().clone(),
-            &vec![(to_pubkey, 1); MAX_TRANSFERS_PER_TX],
-        );
-        let prioritization = ComputeBudgetInstruction::set_compute_unit_price(compute_unit_price);
-        ixs.push(prioritization);
-        let message = Message::new(&ixs, Some(&payer.pubkey()));
-        let tx = Transaction::new(&[payer], message, Hash::default());
-        let transaction = RuntimeTransaction::from_transaction_for_tests(tx);
-
-        transactions.push(transaction);
-    }
-
-    transactions
+    build_transactions(count, true)
 }
 
 // Tracer is a non-contend low-prio transfer transaction, it'd usually be inserted into the bottom
@@ -183,7 +172,30 @@ struct BenchStats {
 
 impl BenchStats {
     fn print_and_reset(&mut self) {
-        println!("{:?}", self);
+        println!(
+            "== Averaged per bench stats to empty Container ==
+            number of scheduling: {}
+            number of Works: {}
+            number of transactions scheduled: {}
+            number of transactions per work: {}
+            Tracer placement: {}",
+            self.num_of_scheduling
+                .checked_div(self.bench_iter_count)
+                .unwrap_or(0),
+            self.num_works
+                .load(Ordering::Relaxed)
+                .checked_div(self.bench_iter_count)
+                .unwrap_or(0),
+            self.num_transaction
+                .load(Ordering::Relaxed)
+                .checked_div(self.bench_iter_count)
+                .unwrap_or(0),
+            self.num_transaction
+                .load(Ordering::Relaxed)
+                .checked_div(self.num_works.load(Ordering::Relaxed))
+                .unwrap_or(0),
+            self.tracer_placement.load(Ordering::Relaxed)
+        );
         self.num_works.swap(0, Ordering::Relaxed);
         self.num_transaction.swap(0, Ordering::Relaxed);
         self.tracer_placement.swap(0, Ordering::Relaxed);

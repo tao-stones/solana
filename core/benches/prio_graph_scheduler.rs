@@ -3,7 +3,6 @@ use {
     crossbeam_channel::{unbounded, Receiver, Sender},
     jemallocator::Jemalloc,
     solana_core::banking_stage::{
-        immutable_deserialized_packet::ImmutableDeserializedPacket,
         scheduler_messages::{ConsumeWork, FinishedConsumeWork, MaxAge},
         transaction_scheduler::{
             greedy_scheduler::{GreedyScheduler, GreedySchedulerConfig},
@@ -21,7 +20,6 @@ use {
         compute_budget::ComputeBudgetInstruction,
         hash::Hash,
         message::Message,
-        packet::Packet,
         pubkey::Pubkey,
         signature::Keypair,
         signer::Signer,
@@ -153,12 +151,6 @@ impl<Tx: TransactionWithMeta> BenchContainer<Tx> {
                 .unwrap()
                 .compute_unit_price;
 
-            let packet = Arc::new(
-                ImmutableDeserializedPacket::new(
-                    Packet::from_data(None, transaction.to_versioned_transaction()).unwrap(),
-                )
-                .unwrap(),
-            );
             let transaction_ttl = SanitizedTransactionTTL {
                 transaction,
                 max_age: MaxAge::MAX,
@@ -168,7 +160,6 @@ impl<Tx: TransactionWithMeta> BenchContainer<Tx> {
             const TEST_TRANSACTION_COST: u64 = 0;
             if self.container.insert_new_transaction(
                 transaction_ttl,
-                packet,
                 compute_unit_price,
                 TEST_TRANSACTION_COST,
             ) {

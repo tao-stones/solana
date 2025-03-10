@@ -2737,8 +2737,7 @@ impl Bank {
         self.blockhash_queue
             .write()
             .unwrap()
-            // TODO - it's practically always 5000, would be OK to let go of potential adjustment?
-            .genesis_hash(&genesis_hash, self.get_lamports_per_signature());
+            .genesis_hash(&genesis_hash, genesis_config.fee_rate_governor.lamports_per_signature);
 
         self.hashes_per_tick = genesis_config.hashes_per_tick();
         self.ticks_per_slot = genesis_config.ticks_per_slot();

@@ -577,8 +577,6 @@ mod tests {
 
             let mut bank_fields = bank.get_fields_to_serialize();
             let versioned_epoch_stakes = std::mem::take(&mut bank_fields.versioned_epoch_stakes);
-            let (_last_hash, last_lamports_per_signature) =
-                bank.last_blockhash_and_lamports_per_signature();
             serde_snapshot::serialize_bank_snapshot_with(
                 serializer,
                 bank_fields,
@@ -587,7 +585,8 @@ mod tests {
                 AccountsHash(Hash::new_unique()),
                 &get_storages_to_serialize(&snapshot_storages),
                 ExtraFieldsToSerialize {
-                    lamports_per_signature: last_lamports_per_signature,
+                    lamports_per_signature: solana_sdk::fee_calculator::FeeRateGovernor::default()
+                        .lamports_per_signature,
                     incremental_snapshot_persistence: Some(&incremental_snapshot_persistence),
                     epoch_accounts_hash: Some(EpochAccountsHash::new(Hash::new_unique())),
                     versioned_epoch_stakes,

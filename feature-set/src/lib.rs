@@ -1090,7 +1090,7 @@ pub mod enshrine_slashing_program {
     solana_pubkey::declare_id!("sProgVaNWkYdP2eTRAy1CPrgb3b9p8yXCASrPEqo6VJ");
 }
 
-pub mod remove_fee_rate_governor_from_bank {
+pub mod remove_fee_rate_governor_from_fee_calculation {
     solana_pubkey::declare_id!("2dsTvEsgS6K5eV82Bn6hNCDm76rZUWcWeKvHjGqtUmgE");
 }
 
@@ -1328,7 +1328,7 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (raise_block_limits_to_60m::id(), "Raise block limit to 60M SIMD-0256"),
         (mask_out_rent_epoch_in_vm_serialization::id(), "SIMD-0267: Sets rent_epoch to a constant in the VM"),
         (enshrine_slashing_program::id(), "SIMD-0204: Slashable event verification"),
-        (remove_fee_rate_governor_from_bank::id(), "Remove obsoleted FeeRateGovernor from bank #3303"),
+        (remove_fee_rate_governor_from_fee_calculation::id(), "Remove obsoleted FeeRateGovernor from fee calculation #5782"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()

@@ -1117,7 +1117,7 @@ pub mod reenable_zk_elgamal_proof_program {
     solana_pubkey::declare_id!("zkemPXcuM3G4wpMDZ36Cpw34EjUpvm1nuioiSGbGZPR");
 }
 
-pub mod remove_fee_rate_governor_from_bank {
+pub mod remove_fee_rate_governor_from_fee_calculation {
     solana_pubkey::declare_id!("2dsTvEsgS6K5eV82Bn6hNCDm76rZUWcWeKvHjGqtUmgE");
 }
 
@@ -1360,7 +1360,7 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (alpenglow::id(), "Enable Alpenglow"),
         (disable_zk_elgamal_proof_program::id(), "Disables zk-elgamal-proof program"),
         (reenable_zk_elgamal_proof_program::id(), "Re-enables zk-elgamal-proof program"),
-        (remove_fee_rate_governor_from_bank::id(), "Remove obsoleted FeeRateGovernor from bank #3303"),
+        (remove_fee_rate_governor_from_fee_calculation::id(), "Remove obsoleted FeeRateGovernor from fee calculation #5782"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()

@@ -3051,7 +3051,7 @@ impl Bank {
 
         let recent_lamports_per_signature = if self
             .feature_set
-            .is_active(&agave_feature_set::remove_fee_rate_governor_from_bank::id())
+            .is_active(&agave_feature_set::remove_fee_rate_governor_from_fee_calculation::id())
         {
             // lamports_per_signature stored in blockhash_queue is not used for fee calculation
             // but only for determining zero_fees_for_test mode (lamports_per_signature == 0).
@@ -3109,7 +3109,7 @@ impl Bank {
     ) {
         let recent_lamports_per_signature = if self
             .feature_set
-            .is_active(&agave_feature_set::remove_fee_rate_governor_from_bank::id())
+            .is_active(&agave_feature_set::remove_fee_rate_governor_from_fee_calculation::id())
         {
             // lamports_per_signature stored in blockhash_queue is not used for fee calculation
             // but only for determining zero_fees_for_test mode (lamports_per_signature == 0).

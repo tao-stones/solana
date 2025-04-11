@@ -6475,7 +6475,7 @@ fn test_bank_hash_consistency() {
     );
     activate_feature(
         &mut genesis_config,
-        agave_feature_set::remove_fee_rate_governor_from_bank::id(),
+        agave_feature_set::remove_fee_rate_governor_from_fee_calculation::id(),
     );
 
     let mut bank = Arc::new(Bank::new_for_tests(&genesis_config));

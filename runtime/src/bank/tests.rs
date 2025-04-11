@@ -5699,7 +5699,7 @@ fn test_bank_hash_consistency() {
     genesis_config.cluster_type = ClusterType::MainnetBeta;
     activate_feature(
         &mut genesis_config,
-        agave_feature_set::remove_fee_rate_governor_from_bank::id(),
+        agave_feature_set::remove_fee_rate_governor_from_fee_calculation::id(),
     );
 
     // Set the feature set to all enabled so that we detect any inconsistencies
@@ -5726,7 +5726,7 @@ fn test_bank_hash_consistency() {
             assert_eq!(bank.epoch(), 0);
             assert_eq!(
                 bank.hash().to_string(),
-                "CNa64RPuBM1b4sicZCkMeiuhcMhLpfvh7GxhLQZnhRcs"
+                "21uu53PtWcbdKui4zoBmR86WyW5mTPmHud32yNFM7D9T"
             );
         }
 
@@ -5734,14 +5734,14 @@ fn test_bank_hash_consistency() {
             assert_eq!(bank.epoch(), 1);
             assert_eq!(
                 bank.hash().to_string(),
-                "ApbSYzbXgNBobjzp8ytimvVsMBUxtuJR9nFieePdpwj3"
+                "DHNFJRf1Vrfj18FTNafax4Y2HDc81BCsgygJxKXcAn33"
             );
         }
         if bank.slot == 128 {
             assert_eq!(bank.epoch(), 2);
             assert_eq!(
                 bank.hash().to_string(),
-                "6jy3Rg765h8byc94FPAt2FDzZhFRgZdDprer1i1g2dkt"
+                "8TwCL1HkVoTqzoUZnWHbwinCnAR4MEboPx9uPojNsqoZ"
             );
             break;
         }

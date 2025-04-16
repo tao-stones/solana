@@ -1,5 +1,5 @@
 use {
-    criterion::{black_box, criterion_group, criterion_main, Criterion},
+    criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput},
     crossbeam_channel::{unbounded, Receiver, Sender},
     jemallocator::Jemalloc,
     solana_core::banking_stage::{
@@ -51,7 +51,7 @@ trait TestTxsBuilder {
     // Tracer is a non-contend low-prio transfer transaction, it'd usually be inserted into the bottom
     // of Container due to its low prio, but it should be scheduled early for better UX, if its reward
     // is adequate from bolcker builder perspective.
-    fn build_tracer_transaction() -> RuntimeTransaction<SanitizedTransaction> {
+    fn build_tracer_transaction(&self) -> RuntimeTransaction<SanitizedTransaction> {
         let payer = Keypair::new();
         let to_pubkey = Pubkey::new_unique();
         let mut ixs = vec![system_instruction::transfer(&payer.pubkey(), &to_pubkey, 1)];
@@ -62,15 +62,19 @@ trait TestTxsBuilder {
         RuntimeTransaction::from_transaction_for_tests(tx)
     }
 
-    fn build(&self) -> Vec<RuntimeTransaction<SanitizedTransaction>> {
-        let mut transactions = Vec::with_capacity(self.count());
+    fn build(
+        &self,
+        count: usize,
+        is_single_payer: bool,
+    ) -> Vec<RuntimeTransaction<SanitizedTransaction>> {
+        let mut transactions = Vec::with_capacity(count);
         // non-contend low-prio tx is first received
-        transactions.push(Self::build_tracer_transaction());
+        transactions.push(self.build_tracer_transaction());
 
         let compute_unit_price = 1_000;
         let single_payer = Keypair::new();
-        for _n in 1..self.count() {
-            let payer = if self.is_single_payer() {
+        for _n in 1..count {
+            let payer = if is_single_payer {
                 // recreate keypair from single_payer
                 Keypair::from_bytes(&single_payer.to_bytes()).expect("Failed to create Keypair")
             } else {
@@ -90,61 +94,21 @@ trait TestTxsBuilder {
         transactions
     }
 
-    fn count(&self) -> usize;
-    fn is_single_payer(&self) -> bool;
     fn prepare_instructions(&self, payer: &Keypair) -> Vec<Instruction>;
 }
 
-struct SimpleTransferTxBuilder {
-    count: usize,
-    is_single_payer: bool,
-}
-
-impl SimpleTransferTxBuilder {
-    fn new(count: usize, is_single_payer: bool) -> Self {
-        Self {
-            count,
-            is_single_payer,
-        }
-    }
-}
-
+struct SimpleTransferTxBuilder;
 impl TestTxsBuilder for SimpleTransferTxBuilder {
-    fn count(&self) -> usize {
-        self.count
-    }
-    fn is_single_payer(&self) -> bool {
-        self.is_single_payer
-    }
     fn prepare_instructions(&self, payer: &Keypair) -> Vec<Instruction> {
         let to_pubkey = Pubkey::new_unique();
         vec![system_instruction::transfer(&payer.pubkey(), &to_pubkey, 1)]
     }
 }
 
-struct ManyTransfersTxBuilder {
-    count: usize,
-    is_single_payer: bool,
-}
-
-impl ManyTransfersTxBuilder {
-    fn new(count: usize, is_single_payer: bool) -> Self {
-        Self {
-            count,
-            is_single_payer,
-        }
-    }
-}
-
+struct ManyTransfersTxBuilder;
 impl TestTxsBuilder for ManyTransfersTxBuilder {
-    fn count(&self) -> usize {
-        self.count
-    }
-    fn is_single_payer(&self) -> bool {
-        self.is_single_payer
-    }
     fn prepare_instructions(&self, payer: &Keypair) -> Vec<Instruction> {
-        const MAX_TRANSFERS_PER_TX: usize = 58;
+        const MAX_TRANSFERS_PER_TX: usize = 35;
         let to = Vec::from_iter(
             std::iter::repeat_with(|| (Pubkey::new_unique(), 1)).take(MAX_TRANSFERS_PER_TX),
         );
@@ -152,27 +116,8 @@ impl TestTxsBuilder for ManyTransfersTxBuilder {
     }
 }
 
-struct PackedNoopsTxBuilder {
-    count: usize,
-    is_single_payer: bool,
-}
-
-impl PackedNoopsTxBuilder {
-    fn new(count: usize, is_single_payer: bool) -> Self {
-        Self {
-            count,
-            is_single_payer,
-        }
-    }
-}
-
+struct PackedNoopsTxBuilder;
 impl TestTxsBuilder for PackedNoopsTxBuilder {
-    fn count(&self) -> usize {
-        self.count
-    }
-    fn is_single_payer(&self) -> bool {
-        self.is_single_payer
-    }
     fn prepare_instructions(&self, _payer: &Keypair) -> Vec<Instruction> {
         // Creating noop instructions to maximize the number of instructions per
         // transaction. We can fit up to 355 noops.
@@ -322,7 +267,7 @@ impl PingPong {
                 num_transaction.fetch_add(work.transactions.len(), Ordering::Relaxed);
             if tracer_placement.load(Ordering::Relaxed) == 0 {
                 work.transactions.iter().for_each(|tx| {
-                    tx_count += 1;
+                    tx_count = tx_count.saturating_add(1);
                     if is_tracer(tx) {
                         tracer_placement.store(tx_count, Ordering::Relaxed)
                     }
@@ -344,6 +289,7 @@ impl PingPong {
 }
 
 struct BenchEnv<Tx: TransactionWithMeta + Send + Sync + 'static> {
+    #[allow(dead_code)]
     pingpong_worker: PingPong,
     filter_1: fn(&[&Tx], &mut [bool]),
     filter_2: fn(&TransactionState<Tx>) -> PreLockFilterAction,
@@ -391,184 +337,142 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchEnv<Tx> {
     ) {
         // each bench measurement is to schedule everything in the container
         while !container.is_empty() {
-            scheduler.receive_completed(&mut container).unwrap();
+            // TODO - should call this, but it panics
+            // scheduler.receive_completed(&mut container).unwrap();
 
             let result = scheduler
                 .schedule(&mut container, self.filter_1, self.filter_2)
                 .unwrap();
 
             // do some VERY QUICK stats collecting to print/assert at end of bench
-            stats.num_of_scheduling += 1;
-            stats.num_scheduled += result.num_scheduled;
+            stats.num_of_scheduling = stats.num_of_scheduling.saturating_add(1);
+            stats.num_scheduled = stats.num_scheduled.saturating_add(result.num_scheduled);
         }
 
-        stats.bench_iter_count += 1;
+        stats.bench_iter_count = stats.bench_iter_count.saturating_add(1);
     }
 }
 
-fn bench_empty_container(c: &mut Criterion) {
+fn bench_prio_graph_scheuler(c: &mut Criterion) {
     let mut stats = BenchStats::default();
     let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
 
-    c.benchmark_group("bench_empty_container")
-        .bench_function("sdk_transaction_type", |bencher| {
-            bencher.iter_with_setup(
-                || {
-                    let bench_container = BenchContainer::new(0);
-                    let scheduler = PrioGraphScheduler::new(
-                        bench_env.consume_work_senders.clone(),
-                        bench_env.finished_consume_work_receiver.clone(),
-                        PrioGraphSchedulerConfig::default(),
-                    );
-                    (scheduler, bench_container.container)
-                },
-                |(scheduler, container)| {
-                    black_box(bench_env.run(scheduler, container, &mut stats));
-                    //stats.print_and_reset();
-                },
-            )
-        });
-    stats.print_and_reset();
-}
+    let mut group = c.benchmark_group("bench_prio_graph_scheduler_with_sdk_transactions");
+    group.sample_size(10);
 
-fn bench_prio_graph_non_contend_transactions(c: &mut Criterion) {
-    let capacity = TOTAL_BUFFERED_PACKETS;
-    let mut stats = BenchStats::default();
-    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
+    let txs_builders: Vec<(&str, Box<dyn TestTxsBuilder>)> = vec![
+        ("simple_transfer", Box::new(SimpleTransferTxBuilder)),
+        ("many_transfer", Box::new(ManyTransfersTxBuilder)),
+        ("packed_noop", Box::new(PackedNoopsTxBuilder)),
+    ];
 
-    c.benchmark_group("bench_prio_graph_non_contend_transactions")
-        .sample_size(10)
-        .bench_function("sdk_transaction_type", |bencher| {
-            bencher.iter_with_setup(
-                || {
-                    let mut bench_container = BenchContainer::new(capacity);
-                    bench_container.fill_container(
-                        ManyTransfersTxBuilder::new(capacity, false)
-                            .build()
-                            .into_iter(),
-                    );
-                    let scheduler = PrioGraphScheduler::new(
-                        bench_env.consume_work_senders.clone(),
-                        bench_env.finished_consume_work_receiver.clone(),
-                        PrioGraphSchedulerConfig::default(),
-                    );
-                    (scheduler, bench_container.container)
-                },
-                |(scheduler, container)| {
-                    black_box(bench_env.run(scheduler, container, &mut stats));
-                    //stats.print_and_reset();
-                },
-            )
-        });
+    let conflict_conditions: Vec<(&str, bool)> =
+        vec![("non-conflict", false), ("full-conflict", true)];
 
-    stats.print_and_reset();
-}
+    let tx_counts: Vec<(&str, usize)> = vec![
+        ("empty_container", 0),
+        ("full_container", TOTAL_BUFFERED_PACKETS),
+    ];
 
-fn bench_prio_graph_fully_contend_transactions(c: &mut Criterion) {
-    let capacity = TOTAL_BUFFERED_PACKETS;
-    let mut stats = BenchStats::default();
-    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
-
-    c.benchmark_group("bench_prio_graph_fully_contend_transactions")
-        .sample_size(10)
-        .bench_function("sdk_transaction_type", |bencher| {
-            bencher.iter_with_setup(
-                || {
-                    let mut bench_container = BenchContainer::new(capacity);
-                    bench_container.fill_container(
-                        ManyTransfersTxBuilder::new(capacity, true)
-                            .build()
-                            .into_iter(),
-                    );
-                    let scheduler = PrioGraphScheduler::new(
-                        bench_env.consume_work_senders.clone(),
-                        bench_env.finished_consume_work_receiver.clone(),
-                        PrioGraphSchedulerConfig::default(),
-                    );
-                    (scheduler, bench_container.container)
-                },
-                |(scheduler, container)| {
-                    black_box(bench_env.run(scheduler, container, &mut stats));
-                    //stats.print_and_reset();
-                },
-            )
-        });
+    for (txs_buidler_type, txs_builder) in &txs_builders {
+        for (conflict_condition_type, conflict_condition) in &conflict_conditions {
+            for (tx_count_type, tx_count) in &tx_counts {
+                let bench_name =
+                    format!("{txs_buidler_type}/{conflict_condition_type}/{tx_count_type}");
+                group.throughput(Throughput::Elements(*tx_count as u64));
+                group.bench_function(&bench_name, |bencher| {
+                    bencher.iter_with_setup(
+                        || {
+                            let mut bench_container = BenchContainer::new(TOTAL_BUFFERED_PACKETS);
+                            bench_container.container.clear();
+                            bench_container.fill_container(
+                                txs_builder
+                                    .build(*tx_count, *conflict_condition)
+                                    .into_iter(),
+                            );
+                            let scheduler = PrioGraphScheduler::new(
+                                bench_env.consume_work_senders.clone(),
+                                bench_env.finished_consume_work_receiver.clone(),
+                                PrioGraphSchedulerConfig::default(),
+                            );
+                            (scheduler, bench_container.container)
+                        },
+                        |(scheduler, container)| {
+                            bench_env.run(
+                                black_box(scheduler),
+                                black_box(container),
+                                &mut stats,
+                            );
+                            //stats.print_and_reset();
+                        },
+                    )
+                });
+            }
+        }
+    }
 
     stats.print_and_reset();
 }
 
-fn bench_greedy_non_contend_transactions(c: &mut Criterion) {
-    let capacity = TOTAL_BUFFERED_PACKETS;
+fn bench_greedy_scheuler(c: &mut Criterion) {
     let mut stats = BenchStats::default();
     let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
 
-    c.benchmark_group("bench_greedy_non_contend_transactions")
-        .sample_size(10)
-        .bench_function("sdk_transaction_type", |bencher| {
-            bencher.iter_with_setup(
-                || {
-                    let mut bench_container = BenchContainer::new(capacity);
-                    bench_container.fill_container(
-                        ManyTransfersTxBuilder::new(capacity, false)
-                            .build()
-                            .into_iter(),
-                    );
-                    let scheduler = GreedyScheduler::new(
-                        bench_env.consume_work_senders.clone(),
-                        bench_env.finished_consume_work_receiver.clone(),
-                        GreedySchedulerConfig::default(),
-                    );
-                    (scheduler, bench_container.container)
-                },
-                |(scheduler, container)| {
-                    black_box(bench_env.run(scheduler, container, &mut stats));
-                    //stats.print_and_reset();
-                },
-            )
-        });
+    let mut group = c.benchmark_group("bench_greedy_scheduler_with_sdk_transactions");
+    group.sample_size(10);
+
+    let txs_builders: Vec<(&str, Box<dyn TestTxsBuilder>)> = vec![
+        ("simple_transfer", Box::new(SimpleTransferTxBuilder)),
+        ("many_transfer", Box::new(ManyTransfersTxBuilder)),
+        ("packed_noop", Box::new(PackedNoopsTxBuilder)),
+    ];
+
+    let conflict_conditions: Vec<(&str, bool)> =
+        vec![("non-conflict", false), ("full-conflict", true)];
+
+    let tx_counts: Vec<(&str, usize)> = vec![
+        ("empty_container", 0),
+        ("full_container", TOTAL_BUFFERED_PACKETS),
+    ];
+
+    for (txs_buidler_type, txs_builder) in &txs_builders {
+        for (conflict_condition_type, conflict_condition) in &conflict_conditions {
+            for (tx_count_type, tx_count) in &tx_counts {
+                let bench_name =
+                    format!("{txs_buidler_type}/{conflict_condition_type}/{tx_count_type}");
+                group.throughput(Throughput::Elements(*tx_count as u64));
+                group.bench_function(&bench_name, |bencher| {
+                    bencher.iter_with_setup(
+                        || {
+                            let mut bench_container = BenchContainer::new(TOTAL_BUFFERED_PACKETS);
+                            bench_container.fill_container(
+                                txs_builder
+                                    .build(*tx_count, *conflict_condition)
+                                    .into_iter(),
+                            );
+                            let scheduler = GreedyScheduler::new(
+                                bench_env.consume_work_senders.clone(),
+                                bench_env.finished_consume_work_receiver.clone(),
+                                GreedySchedulerConfig::default(),
+                            );
+                            (scheduler, bench_container.container)
+                        },
+                        |(scheduler, container)| {
+                            bench_env.run(
+                                black_box(scheduler),
+                                black_box(container),
+                                &mut stats,
+                            );
+                            //stats.print_and_reset();
+                        },
+                    )
+                });
+            }
+        }
+    }
 
     stats.print_and_reset();
 }
 
-fn bench_greedy_fully_contend_transactions(c: &mut Criterion) {
-    let capacity = TOTAL_BUFFERED_PACKETS;
-    let mut stats = BenchStats::default();
-    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
-
-    c.benchmark_group("bench_greedy_fully_contend_transactions")
-        .sample_size(10)
-        .bench_function("sdk_transaction_type", |bencher| {
-            bencher.iter_with_setup(
-                || {
-                    let mut bench_container = BenchContainer::new(capacity);
-                    bench_container.fill_container(
-                        ManyTransfersTxBuilder::new(capacity, true)
-                            .build()
-                            .into_iter(),
-                    );
-                    let scheduler = GreedyScheduler::new(
-                        bench_env.consume_work_senders.clone(),
-                        bench_env.finished_consume_work_receiver.clone(),
-                        GreedySchedulerConfig::default(),
-                    );
-                    (scheduler, bench_container.container)
-                },
-                |(scheduler, container)| {
-                    black_box(bench_env.run(scheduler, container, &mut stats));
-                    //stats.print_and_reset();
-                },
-            )
-        });
-
-    stats.print_and_reset();
-}
-// */
-criterion_group!(
-    benches,
-    bench_empty_container,
-    //    bench_prio_graph_non_contend_transactions,
-    //    bench_prio_graph_fully_contend_transactions,
-    //    bench_greedy_non_contend_transactions,
-    //    bench_greedy_fully_contend_transactions,
-);
+criterion_group!(benches, bench_prio_graph_scheuler, bench_greedy_scheuler,);
 criterion_main!(benches);

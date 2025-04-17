@@ -27,9 +27,12 @@ use {
         system_instruction,
         transaction::{SanitizedTransaction, Transaction},
     },
-    std::sync::{
-        atomic::{AtomicUsize, Ordering},
-        Arc,
+    std::{
+        sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        },
+        time::{Duration, Instant},
     },
 };
 
@@ -374,38 +377,47 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
         ("full_container", TOTAL_BUFFERED_PACKETS),
     ];
 
-    for (txs_buidler_type, txs_builder) in &txs_builders {
+    for (txs_builder_type, txs_builder) in &txs_builders {
         for (conflict_condition_type, conflict_condition) in &conflict_conditions {
             for (tx_count_type, tx_count) in &tx_counts {
                 let bench_name =
-                    format!("{txs_buidler_type}/{conflict_condition_type}/{tx_count_type}");
+                    format!("{txs_builder_type}/{conflict_condition_type}/{tx_count_type}");
                 group.throughput(Throughput::Elements(*tx_count as u64));
                 group.bench_function(&bench_name, |bencher| {
-                    bencher.iter_with_setup(
-                        || {
-                            let mut bench_container = BenchContainer::new(TOTAL_BUFFERED_PACKETS);
-                            bench_container.container.clear();
-                            bench_container.fill_container(
-                                txs_builder
-                                    .build(*tx_count, *conflict_condition)
-                                    .into_iter(),
-                            );
-                            let scheduler = PrioGraphScheduler::new(
-                                bench_env.consume_work_senders.clone(),
-                                bench_env.finished_consume_work_receiver.clone(),
-                                PrioGraphSchedulerConfig::default(),
-                            );
-                            (scheduler, bench_container.container)
-                        },
-                        |(scheduler, container)| {
-                            bench_env.run(
-                                black_box(scheduler),
-                                black_box(container),
-                                &mut stats,
-                            );
-                            //stats.print_and_reset();
-                        },
-                    )
+                    bencher.iter_custom(|iters| {
+                        let mut execute_time: Duration = std::time::Duration::ZERO;
+                        for _i in 0..iters {
+                            // setup new Scheduler and Container for each iteration of execution
+                            let (scheduler, container) = {
+                                let mut bench_container =
+                                    BenchContainer::new(TOTAL_BUFFERED_PACKETS);
+                                bench_container.fill_container(
+                                    txs_builder
+                                        .build(*tx_count, *conflict_condition)
+                                        .into_iter(),
+                                );
+                                let scheduler = PrioGraphScheduler::new(
+                                    bench_env.consume_work_senders.clone(),
+                                    bench_env.finished_consume_work_receiver.clone(),
+                                    PrioGraphSchedulerConfig::default(),
+                                );
+                                (scheduler, bench_container.container)
+                            };
+
+                            // execute with custom timing
+                            let start = Instant::now();
+                            {
+                                bench_env.run(
+                                    black_box(scheduler),
+                                    black_box(container),
+                                    &mut stats,
+                                );
+                                //stats.print_and_reset();
+                            }
+                            execute_time = execute_time.saturating_add(start.elapsed());
+                        }
+                        execute_time
+                    })
                 });
             }
         }
@@ -435,37 +447,47 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
         ("full_container", TOTAL_BUFFERED_PACKETS),
     ];
 
-    for (txs_buidler_type, txs_builder) in &txs_builders {
+    for (txs_builder_type, txs_builder) in &txs_builders {
         for (conflict_condition_type, conflict_condition) in &conflict_conditions {
             for (tx_count_type, tx_count) in &tx_counts {
                 let bench_name =
-                    format!("{txs_buidler_type}/{conflict_condition_type}/{tx_count_type}");
+                    format!("{txs_builder_type}/{conflict_condition_type}/{tx_count_type}");
                 group.throughput(Throughput::Elements(*tx_count as u64));
                 group.bench_function(&bench_name, |bencher| {
-                    bencher.iter_with_setup(
-                        || {
-                            let mut bench_container = BenchContainer::new(TOTAL_BUFFERED_PACKETS);
-                            bench_container.fill_container(
-                                txs_builder
-                                    .build(*tx_count, *conflict_condition)
-                                    .into_iter(),
-                            );
-                            let scheduler = GreedyScheduler::new(
-                                bench_env.consume_work_senders.clone(),
-                                bench_env.finished_consume_work_receiver.clone(),
-                                GreedySchedulerConfig::default(),
-                            );
-                            (scheduler, bench_container.container)
-                        },
-                        |(scheduler, container)| {
-                            bench_env.run(
-                                black_box(scheduler),
-                                black_box(container),
-                                &mut stats,
-                            );
-                            //stats.print_and_reset();
-                        },
-                    )
+                    bencher.iter_custom(|iters| {
+                        let mut execute_time: Duration = std::time::Duration::ZERO;
+                        for _i in 0..iters {
+                            // setup new Scheduler and Container for each iteration of execution
+                            let (scheduler, container) = {
+                                let mut bench_container =
+                                    BenchContainer::new(TOTAL_BUFFERED_PACKETS);
+                                bench_container.fill_container(
+                                    txs_builder
+                                        .build(*tx_count, *conflict_condition)
+                                        .into_iter(),
+                                );
+                                let scheduler = GreedyScheduler::new(
+                                    bench_env.consume_work_senders.clone(),
+                                    bench_env.finished_consume_work_receiver.clone(),
+                                    GreedySchedulerConfig::default(),
+                                );
+                                (scheduler, bench_container.container)
+                            };
+
+                            // execute with custom timing
+                            let start = Instant::now();
+                            {
+                                bench_env.run(
+                                    black_box(scheduler),
+                                    black_box(container),
+                                    &mut stats,
+                                );
+                                //stats.print_and_reset();
+                            }
+                            execute_time = execute_time.saturating_add(start.elapsed());
+                        }
+                        execute_time
+                    })
                 });
             }
         }

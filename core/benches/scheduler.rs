@@ -183,7 +183,7 @@ struct BenchStats {
 impl BenchStats {
     fn print_and_reset(&mut self) {
         println!(
-            "== Averaged per bench stats to empty Container ==
+            "per bench stats:
             number of scheduling: {}
             number of Works: {}
             number of transactions scheduled: {}
@@ -262,8 +262,6 @@ impl PingPong {
         num_transaction: Arc<AtomicUsize>,
         tracer_placement: Arc<AtomicUsize>,
     ) {
-        // NOTE: will blocking recv() impact benchmark quality? Perhaps making worker threads
-        // hot spinning?
         while let Ok(work) = work_receiver.recv() {
             num_works.fetch_add(1, Ordering::Relaxed);
             let mut tx_count =
@@ -412,18 +410,16 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
                                     black_box(container),
                                     &mut stats,
                                 );
-                                //stats.print_and_reset();
                             }
                             execute_time = execute_time.saturating_add(start.elapsed());
                         }
                         execute_time
                     })
                 });
+                stats.print_and_reset();
             }
         }
     }
-
-    stats.print_and_reset();
 }
 
 fn bench_greedy_scheuler(c: &mut Criterion) {
@@ -482,18 +478,16 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
                                     black_box(container),
                                     &mut stats,
                                 );
-                                //stats.print_and_reset();
                             }
                             execute_time = execute_time.saturating_add(start.elapsed());
                         }
                         execute_time
                     })
                 });
+                stats.print_and_reset();
             }
         }
     }
-
-    stats.print_and_reset();
 }
 
 criterion_group!(benches, bench_prio_graph_scheuler, bench_greedy_scheuler,);

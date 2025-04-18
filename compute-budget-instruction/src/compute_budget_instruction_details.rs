@@ -219,14 +219,6 @@ impl ComputeBudgetInstructionDetails {
     }
 }
 
-impl ComputeBudgetInstructionDetails {
-    #[cfg(feature = "dev-context-only-utils")]
-    pub fn requested_loaded_accounts_data_size_limit(&self) -> Option<u32> {
-        self.requested_loaded_accounts_data_size_limit
-            .map(|(_, v)| v)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use {

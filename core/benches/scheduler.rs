@@ -22,7 +22,7 @@ use {
         instruction::Instruction,
         message::Message,
         pubkey::Pubkey,
-        signature::Keypair,
+        signature::{Keypair, Signature},
         signer::Signer,
         system_instruction,
         transaction::{SanitizedTransaction, Transaction},
@@ -39,15 +39,11 @@ use {
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
 
-// A non-contend low-prio tx, aka Tracer, is tag with this requested_loaded_accounts_data_size_limit
-const TAG_NUMBER: u32 = 1234;
+// A non-contend low-prio tx, aka Tracer, that is identified with this dummy signature
+const DUMMY_SIG_BYTES: [u8; 64] = [1u8; 64];
 
 fn is_tracer<Tx: TransactionWithMeta + Send + Sync + 'static>(tx: &Tx) -> bool {
-    matches!(
-        tx.compute_budget_instruction_details()
-            .requested_loaded_accounts_data_size_limit(),
-        Some(TAG_NUMBER)
-    )
+    tx.signature().as_ref() == DUMMY_SIG_BYTES
 }
 
 trait TestTxsBuilder {
@@ -58,10 +54,12 @@ trait TestTxsBuilder {
         let payer = Keypair::new();
         let to_pubkey = Pubkey::new_unique();
         let mut ixs = vec![system_instruction::transfer(&payer.pubkey(), &to_pubkey, 1)];
-        ixs.push(ComputeBudgetInstruction::set_compute_unit_price(4));
-        ixs.push(ComputeBudgetInstruction::set_loaded_accounts_data_size_limit(TAG_NUMBER));
+        ixs.push(ComputeBudgetInstruction::set_compute_unit_price(1));
         let message = Message::new(&ixs, Some(&payer.pubkey()));
-        let tx = Transaction::new(&[payer], message, Hash::default());
+        let mut tx = Transaction::new(&[payer], message, Hash::default());
+        // override Tracer transaction signature with dummy, this is OK for these benches that
+        // are after sigverify
+        tx.signatures = vec![Signature::from(DUMMY_SIG_BYTES)];
         RuntimeTransaction::from_transaction_for_tests(tx)
     }
 

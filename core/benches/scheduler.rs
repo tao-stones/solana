@@ -78,10 +78,9 @@ trait TestTxsBuilder {
         let single_payer = Keypair::new();
         for _n in 1..count {
             let payer = if is_single_payer {
-                // recreate keypair from single_payer
-                Keypair::from_bytes(&single_payer.to_bytes()).expect("Failed to create Keypair")
+                &single_payer
             } else {
-                Keypair::new()
+                &Keypair::new()
             };
             let mut ixs = self.prepare_instructions(&payer);
             let prioritization =

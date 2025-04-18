@@ -80,7 +80,7 @@ trait TestTxsBuilder {
             } else {
                 &Keypair::new()
             };
-            let mut ixs = self.prepare_instructions(&payer);
+            let mut ixs = self.prepare_instructions(payer);
             let prioritization =
                 ComputeBudgetInstruction::set_compute_unit_price(compute_unit_price);
             ixs.push(prioritization);
@@ -322,16 +322,16 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchEnv<Tx> {
 
     fn run(
         &self,
-        mut scheduler: impl Scheduler<Tx>,
-        mut container: TransactionStateContainer<Tx>,
+        scheduler: &mut impl Scheduler<Tx>,
+        container: &mut TransactionStateContainer<Tx>,
         stats: &mut BenchStats,
     ) {
         // each bench measurement is to schedule everything in the container
         while !container.is_empty() {
-            scheduler.receive_completed(&mut container).unwrap();
+            scheduler.receive_completed(container).unwrap();
 
             let result = scheduler
-                .schedule(&mut container, self.filter_1, self.filter_2)
+                .schedule(container, self.filter_1, self.filter_2)
                 .unwrap();
 
             // do some VERY QUICK stats collecting to print/assert at end of bench
@@ -343,7 +343,7 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchEnv<Tx> {
     }
 }
 
-fn bench_prio_graph_scheuler(c: &mut Criterion) {
+fn bench_prio_graph_scheduler(c: &mut Criterion) {
     let mut group = c.benchmark_group("bench_prio_graph_scheduler_with_sdk_transactions");
     group.sample_size(10);
 
@@ -375,26 +375,23 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
                             // setup new Scheduler and Container for each iteration of execution
                             let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> =
                                 BenchEnv::new(&mut stats);
-                            let (scheduler, container) = {
-                                let container = fill_container(
-                                    txs_builder
-                                        .build(*tx_count, *conflict_condition)
-                                        .into_iter(),
-                                );
-                                let scheduler = PrioGraphScheduler::new(
-                                    bench_env.consume_work_senders.clone(),
-                                    bench_env.finished_consume_work_receiver.clone(),
-                                    PrioGraphSchedulerConfig::default(),
-                                );
-                                (scheduler, container)
-                            };
+                            let mut container = fill_container(
+                                txs_builder
+                                    .build(*tx_count, *conflict_condition)
+                                    .into_iter(),
+                            );
+                            let mut scheduler = PrioGraphScheduler::new(
+                                bench_env.consume_work_senders.clone(),
+                                bench_env.finished_consume_work_receiver.clone(),
+                                PrioGraphSchedulerConfig::default(),
+                            );
 
                             // execute with custom timing
                             let start = Instant::now();
                             {
                                 bench_env.run(
-                                    black_box(scheduler),
-                                    black_box(container),
+                                    black_box(&mut scheduler),
+                                    black_box(&mut container),
                                     &mut stats,
                                 );
                             }
@@ -441,26 +438,23 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
                             // setup new Scheduler and Container for each iteration of execution
                             let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> =
                                 BenchEnv::new(&mut stats);
-                            let (scheduler, container) = {
-                                let container = fill_container(
-                                    txs_builder
-                                        .build(*tx_count, *conflict_condition)
-                                        .into_iter(),
-                                );
-                                let scheduler = GreedyScheduler::new(
-                                    bench_env.consume_work_senders.clone(),
-                                    bench_env.finished_consume_work_receiver.clone(),
-                                    GreedySchedulerConfig::default(),
-                                );
-                                (scheduler, container)
-                            };
+                            let mut container = fill_container(
+                                txs_builder
+                                    .build(*tx_count, *conflict_condition)
+                                    .into_iter(),
+                            );
+                            let mut scheduler = GreedyScheduler::new(
+                                bench_env.consume_work_senders.clone(),
+                                bench_env.finished_consume_work_receiver.clone(),
+                                GreedySchedulerConfig::default(),
+                            );
 
                             // execute with custom timing
                             let start = Instant::now();
                             {
                                 bench_env.run(
-                                    black_box(scheduler),
-                                    black_box(container),
+                                    black_box(&mut scheduler),
+                                    black_box(&mut container),
                                     &mut stats,
                                 );
                             }
@@ -475,5 +469,5 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_prio_graph_scheuler, bench_greedy_scheuler,);
+criterion_group!(benches, bench_prio_graph_scheduler, bench_greedy_scheuler,);
 criterion_main!(benches);

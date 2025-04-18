@@ -328,8 +328,7 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchEnv<Tx> {
     ) {
         // each bench measurement is to schedule everything in the container
         while !container.is_empty() {
-            // TODO - should call this, but it panics
-            // scheduler.receive_completed(&mut container).unwrap();
+            scheduler.receive_completed(&mut container).unwrap();
 
             let result = scheduler
                 .schedule(&mut container, self.filter_1, self.filter_2)
@@ -345,9 +344,6 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchEnv<Tx> {
 }
 
 fn bench_prio_graph_scheuler(c: &mut Criterion) {
-    let mut stats = BenchStats::default();
-    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
-
     let mut group = c.benchmark_group("bench_prio_graph_scheduler_with_sdk_transactions");
     group.sample_size(10);
 
@@ -368,6 +364,7 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
     for (txs_builder_type, txs_builder) in &txs_builders {
         for (conflict_condition_type, conflict_condition) in &conflict_conditions {
             for (tx_count_type, tx_count) in &tx_counts {
+                let mut stats = BenchStats::default();
                 let bench_name =
                     format!("{txs_builder_type}/{conflict_condition_type}/{tx_count_type}");
                 group.throughput(Throughput::Elements(*tx_count as u64));
@@ -376,6 +373,8 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
                         let mut execute_time: Duration = std::time::Duration::ZERO;
                         for _i in 0..iters {
                             // setup new Scheduler and Container for each iteration of execution
+                            let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> =
+                                BenchEnv::new(&mut stats);
                             let (scheduler, container) = {
                                 let container = fill_container(
                                     txs_builder
@@ -411,9 +410,6 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
 }
 
 fn bench_greedy_scheuler(c: &mut Criterion) {
-    let mut stats = BenchStats::default();
-    let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> = BenchEnv::new(&mut stats);
-
     let mut group = c.benchmark_group("bench_greedy_scheduler_with_sdk_transactions");
     group.sample_size(10);
 
@@ -434,6 +430,7 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
     for (txs_builder_type, txs_builder) in &txs_builders {
         for (conflict_condition_type, conflict_condition) in &conflict_conditions {
             for (tx_count_type, tx_count) in &tx_counts {
+                let mut stats = BenchStats::default();
                 let bench_name =
                     format!("{txs_builder_type}/{conflict_condition_type}/{tx_count_type}");
                 group.throughput(Throughput::Elements(*tx_count as u64));
@@ -442,6 +439,8 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
                         let mut execute_time: Duration = std::time::Duration::ZERO;
                         for _i in 0..iters {
                             // setup new Scheduler and Container for each iteration of execution
+                            let bench_env: BenchEnv<RuntimeTransaction<SanitizedTransaction>> =
+                                BenchEnv::new(&mut stats);
                             let (scheduler, container) = {
                                 let container = fill_container(
                                     txs_builder

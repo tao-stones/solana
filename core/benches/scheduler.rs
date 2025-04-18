@@ -129,20 +129,13 @@ impl TestTxsBuilder for PackedNoopsTxBuilder {
     }
 }
 
-struct BenchContainer<Tx: TransactionWithMeta> {
-    container: TransactionStateContainer<Tx>,
-}
-
-impl<Tx: TransactionWithMeta> BenchContainer<Tx> {
-    fn new(capacity: usize) -> Self {
-        Self {
-            container: TransactionStateContainer::with_capacity(capacity),
-        }
-    }
-
-    fn fill_container(&mut self, transactions: impl Iterator<Item = Tx>) {
-        for transaction in transactions {
-            let compute_unit_price = transaction
+fn fill_container<Tx: TransactionWithMeta>(
+    transactions: impl Iterator<Item = Tx>,
+) -> TransactionStateContainer<Tx> {
+    let mut container = TransactionStateContainer::with_capacity(TOTAL_BUFFERED_PACKETS);
+    for transaction in transactions {
+        let compute_unit_price =
+            transaction
                 .compute_budget_instruction_details()
                 .sanitize_and_convert_to_compute_budget_limits(
                     &agave_feature_set::FeatureSet::default(),
@@ -150,19 +143,19 @@ impl<Tx: TransactionWithMeta> BenchContainer<Tx> {
                 .unwrap()
                 .compute_unit_price;
 
-            // NOTE - setting transaction cost to be `0` for now, so it doesn't bother block_limits
-            // when scheduling.
-            const TEST_TRANSACTION_COST: u64 = 0;
-            if self.container.insert_new_transaction(
-                transaction,
-                MaxAge::MAX,
-                compute_unit_price,
-                TEST_TRANSACTION_COST,
-            ) {
-                unreachable!("test is setup to fill the Container to fullness");
-            }
+        // NOTE - setting transaction cost to be `0` for now, so it doesn't bother block_limits
+        // when scheduling.
+        const TEST_TRANSACTION_COST: u64 = 0;
+        if container.insert_new_transaction(
+            transaction,
+            MaxAge::MAX,
+            compute_unit_price,
+            TEST_TRANSACTION_COST,
+        ) {
+            unreachable!("test is setup to fill the Container to fullness");
         }
     }
+    container
 }
 
 #[derive(Debug, Default)]
@@ -384,9 +377,7 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
                         for _i in 0..iters {
                             // setup new Scheduler and Container for each iteration of execution
                             let (scheduler, container) = {
-                                let mut bench_container =
-                                    BenchContainer::new(TOTAL_BUFFERED_PACKETS);
-                                bench_container.fill_container(
+                                let container = fill_container(
                                     txs_builder
                                         .build(*tx_count, *conflict_condition)
                                         .into_iter(),
@@ -396,7 +387,7 @@ fn bench_prio_graph_scheuler(c: &mut Criterion) {
                                     bench_env.finished_consume_work_receiver.clone(),
                                     PrioGraphSchedulerConfig::default(),
                                 );
-                                (scheduler, bench_container.container)
+                                (scheduler, container)
                             };
 
                             // execute with custom timing
@@ -452,9 +443,7 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
                         for _i in 0..iters {
                             // setup new Scheduler and Container for each iteration of execution
                             let (scheduler, container) = {
-                                let mut bench_container =
-                                    BenchContainer::new(TOTAL_BUFFERED_PACKETS);
-                                bench_container.fill_container(
+                                let container = fill_container(
                                     txs_builder
                                         .build(*tx_count, *conflict_condition)
                                         .into_iter(),
@@ -464,7 +453,7 @@ fn bench_greedy_scheuler(c: &mut Criterion) {
                                     bench_env.finished_consume_work_receiver.clone(),
                                     GreedySchedulerConfig::default(),
                                 );
-                                (scheduler, bench_container.container)
+                                (scheduler, container)
                             };
 
                             // execute with custom timing

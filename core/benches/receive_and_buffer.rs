@@ -31,6 +31,7 @@ fn bench_receive_and_buffer<T: ReceiveAndBuffer + utils::ReceiveAndBufferCreator
         num_instructions_per_tx,
         probability_invalid_blockhash,
         set_rand_cu_price,
+        true, // single fee payer for all transactions
     );
 
     let mut group = c.benchmark_group("receive_and_buffer");

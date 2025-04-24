@@ -180,12 +180,12 @@ pub fn setup_receive_and_buffer<T: ReceiveAndBuffer + ReceiveAndBufferCreator>(
     num_instructions_per_tx: usize,
     probability_invalid_blockhash: f64,
     set_rand_cu_price: bool,
+    use_single_payer: bool,
 ) -> ReceiveAndBufferSetup<T> {
     let GenesisConfigInfo {
         mut genesis_config, ..
     } = create_genesis_config(100_000);
-    // This doesn't change the time to execute
-    let num_fee_payers = 1;
+    let num_fee_payers = if use_single_payer { 1 } else { num_txs };
     // fee payers will be verified, so have to create them properly
     let fee_payers = create_accounts(num_fee_payers, &mut genesis_config);
 

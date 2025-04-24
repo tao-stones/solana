@@ -145,85 +145,92 @@ fn bench_scheduler_impl<T: ReceiveAndBuffer + utils::ReceiveAndBufferCreator>(
         (1, "single_ix"),
         (utils::MAX_INSTRUCTIONS_PER_TRANSACTION, "max_ixs"),
     ];
-    // TODO - add tx accounts conflict config
+    let conflict_types: Vec<(bool, &str)> = vec![(true, "single-payer"), (false, "unique_payer")];
 
     for (is_greedy_scheduler, scheduler_desc) in scheduler_types {
         for (ix_count, ix_count_desc) in &ix_counts {
             for (tx_count, tx_count_desc) in &tx_counts {
-                let bench_name =
-                    format!("{bench_name}/{scheduler_desc}/{ix_count_desc}/{tx_count_desc}");
-                group.throughput(Throughput::Elements(*tx_count as u64));
-                group.bench_function(&bench_name, |bencher| {
-                    bencher.iter_custom(|iters| {
-                        let utils::ReceiveAndBufferSetup {
-                            txs,
-                            sender,
-                            mut container,
-                            mut receive_and_buffer,
-                            decision,
-                        }: utils::ReceiveAndBufferSetup<T> =
-                            utils::setup_receive_and_buffer(*tx_count, *ix_count, 0.0, true);
-
-                        let mut execute_time: Duration = std::time::Duration::ZERO;
-                        for _i in 0..iters {
-                            // setup new Scheduler and reset/refill Container for each iteration of execution
-                            if sender.send(txs.clone()).is_err() {
-                                panic!("Unexpectedly dropped receiver!");
-                            }
-                            container.clear();
-                            let mut count_metrics = SchedulerCountMetrics::default();
-                            let mut timing_metrics = SchedulerTimingMetrics::default();
-                            let res = receive_and_buffer.receive_and_buffer_packets(
-                                &mut container,
-                                &mut timing_metrics,
-                                &mut count_metrics,
-                                &decision,
+                for (conflict_type, conflict_type_desc) in &conflict_types {
+                    let bench_name =
+                    format!("{bench_name}/{scheduler_desc}/{ix_count_desc}/{tx_count_desc}/{conflict_type_desc}");
+                    group.throughput(Throughput::Elements(*tx_count as u64));
+                    group.bench_function(&bench_name, |bencher| {
+                        bencher.iter_custom(|iters| {
+                            let utils::ReceiveAndBufferSetup {
+                                txs,
+                                sender,
+                                mut container,
+                                mut receive_and_buffer,
+                                decision,
+                            }: utils::ReceiveAndBufferSetup<T> = utils::setup_receive_and_buffer(
+                                *tx_count,
+                                *ix_count,
+                                0.0,
+                                true,
+                                *conflict_type,
                             );
-                            assert!(res.unwrap() == *tx_count && !container.is_empty());
 
-                            let bench_env: BenchEnv<T::Transaction> = BenchEnv::new();
-                            let elapsed = if is_greedy_scheduler {
-                                let scheduler = GreedyScheduler::new(
-                                    bench_env.consume_work_senders.clone(),
-                                    bench_env.finished_consume_work_receiver.clone(),
-                                    GreedySchedulerConfig::default(),
+                            let mut execute_time: Duration = std::time::Duration::ZERO;
+                            for _i in 0..iters {
+                                // setup new Scheduler and reset/refill Container for each iteration of execution
+                                if sender.send(txs.clone()).is_err() {
+                                    panic!("Unexpectedly dropped receiver!");
+                                }
+                                container.clear();
+                                let mut count_metrics = SchedulerCountMetrics::default();
+                                let mut timing_metrics = SchedulerTimingMetrics::default();
+                                let res = receive_and_buffer.receive_and_buffer_packets(
+                                    &mut container,
+                                    &mut timing_metrics,
+                                    &mut count_metrics,
+                                    &decision,
                                 );
-                                let mut scheduler = black_box(scheduler);
-                                timing_scheduler!(
-                                    scheduler,
-                                    container,
-                                    bench_env.filter_1,
-                                    bench_env.filter_2
-                                )
-                            } else {
-                                let scheduler = PrioGraphScheduler::new(
-                                    bench_env.consume_work_senders.clone(),
-                                    bench_env.finished_consume_work_receiver.clone(),
-                                    PrioGraphSchedulerConfig::default(),
-                                );
-                                let mut scheduler = black_box(scheduler);
-                                timing_scheduler!(
-                                    scheduler,
-                                    container,
-                                    bench_env.filter_1,
-                                    bench_env.filter_2
-                                )
-                            };
+                                assert!(res.unwrap() == *tx_count && !container.is_empty());
 
-                            execute_time = execute_time.saturating_add(elapsed);
-                        }
-                        execute_time
-                    })
-                });
+                                let bench_env: BenchEnv<T::Transaction> = BenchEnv::new();
+                                let elapsed = if is_greedy_scheduler {
+                                    let scheduler = GreedyScheduler::new(
+                                        bench_env.consume_work_senders.clone(),
+                                        bench_env.finished_consume_work_receiver.clone(),
+                                        GreedySchedulerConfig::default(),
+                                    );
+                                    let mut scheduler = black_box(scheduler);
+                                    timing_scheduler!(
+                                        scheduler,
+                                        container,
+                                        bench_env.filter_1,
+                                        bench_env.filter_2
+                                    )
+                                } else {
+                                    let scheduler = PrioGraphScheduler::new(
+                                        bench_env.consume_work_senders.clone(),
+                                        bench_env.finished_consume_work_receiver.clone(),
+                                        PrioGraphSchedulerConfig::default(),
+                                    );
+                                    let mut scheduler = black_box(scheduler);
+                                    timing_scheduler!(
+                                        scheduler,
+                                        container,
+                                        bench_env.filter_1,
+                                        bench_env.filter_2
+                                    )
+                                };
+
+                                execute_time = execute_time.saturating_add(elapsed);
+                            }
+                            execute_time
+                        })
+                    });
+                }
             }
         }
     }
 }
 
-fn bench_greedy_scheduler(c: &mut Criterion) {
+fn bench_scheduler(c: &mut Criterion) {
     bench_scheduler_impl::<SanitizedTransactionReceiveAndBuffer>(c, "sdk_transaction");
     bench_scheduler_impl::<TransactionViewReceiveAndBuffer>(c, "transaction_view");
 }
 
-criterion_group!(benches, bench_greedy_scheduler,);
+criterion_group!(benches, bench_scheduler,);
 criterion_main!(benches);

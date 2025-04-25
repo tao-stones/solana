@@ -339,6 +339,7 @@ pub struct TransactionSimulationResult {
     pub logs: TransactionLogMessages,
     pub post_simulation_accounts: Vec<TransactionAccount>,
     pub units_consumed: u64,
+    pub loaded_accounts_data_size: u32,
     pub return_data: Option<TransactionReturnData>,
     pub inner_instructions: Option<Vec<InnerInstructions>>,
 }
@@ -3311,6 +3312,7 @@ impl Bank {
             return_data,
             inner_instructions,
             units_consumed,
+            loaded_accounts_data_size,
         ) = match processing_result {
             Ok(processed_tx) => match processed_tx {
                 ProcessedTransaction::Executed(executed_tx) => {
@@ -3328,13 +3330,20 @@ impl Bank {
                         details.return_data,
                         details.inner_instructions,
                         details.executed_units,
+                        executed_tx.loaded_transaction.loaded_accounts_data_size,
                     )
                 }
-                ProcessedTransaction::FeesOnly(fees_only_tx) => {
-                    (vec![], Err(fees_only_tx.load_error), None, None, None, 0)
-                }
+                ProcessedTransaction::FeesOnly(fees_only_tx) => (
+                    vec![],
+                    Err(fees_only_tx.load_error),
+                    None,
+                    None,
+                    None,
+                    0,
+                    fees_only_tx.rollback_accounts.data_size() as u32,
+                ),
             },
-            Err(error) => (vec![], Err(error), None, None, None, 0),
+            Err(error) => (vec![], Err(error), None, None, None, 0, 0),
         };
         let logs = logs.unwrap_or_default();
 
@@ -3343,6 +3352,7 @@ impl Bank {
             logs,
             post_simulation_accounts,
             units_consumed,
+            loaded_accounts_data_size,
             return_data,
             inner_instructions,
         }

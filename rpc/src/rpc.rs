@@ -3900,6 +3900,7 @@ pub mod rpc_full {
                     logs,
                     post_simulation_accounts: _,
                     units_consumed,
+                    loaded_accounts_data_size,
                     return_data,
                     inner_instructions: _, // Always `None` due to `enable_cpi_recording = false`
                 } = preflight_bank.simulate_transaction(&transaction, false)
@@ -3919,6 +3920,7 @@ pub mod rpc_full {
                             logs: Some(logs),
                             accounts: None,
                             units_consumed: Some(units_consumed),
+                            loaded_accounts_data_size: Some(loaded_accounts_data_size),
                             return_data: return_data.map(|return_data| return_data.into()),
                             inner_instructions: None,
                             replacement_blockhash: None,
@@ -3998,6 +4000,7 @@ pub mod rpc_full {
                 logs,
                 post_simulation_accounts,
                 units_consumed,
+                loaded_accounts_data_size,
                 return_data,
                 inner_instructions,
             } = bank.simulate_transaction(&transaction, enable_cpi_recording);
@@ -4064,6 +4067,7 @@ pub mod rpc_full {
                     logs: Some(logs),
                     accounts,
                     units_consumed: Some(units_consumed),
+                    loaded_accounts_data_size: Some(loaded_accounts_data_size),
                     return_data: return_data.map(|return_data| return_data.into()),
                     inner_instructions,
                     replacement_blockhash: blockhash,

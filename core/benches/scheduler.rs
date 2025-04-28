@@ -1,9 +1,10 @@
+#[cfg(not(any(target_env = "msvc", target_os = "freebsd")))]
+use jemallocator::Jemalloc;
 #[path = "receive_and_buffer_utils.rs"]
 mod utils;
 use {
     criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput},
     crossbeam_channel::{unbounded, Receiver, Sender},
-    jemallocator::Jemalloc,
     solana_core::banking_stage::{
         scheduler_messages::{ConsumeWork, FinishedConsumeWork},
         transaction_scheduler::{
@@ -23,9 +24,9 @@ use {
     std::time::{Duration, Instant},
 };
 
+#[cfg(not(any(target_env = "msvc", target_os = "freebsd")))]
 #[global_allocator]
 static GLOBAL: Jemalloc = Jemalloc;
-
 // a bench consumer worker that quickly drain work channel, then send a OK back via completed-work
 // channel
 // NOTE: Avoid creating PingPong within bench iter since joining threads at its eol would

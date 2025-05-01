@@ -870,6 +870,24 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
         );
         process_message_time.stop();
 
+        // checking executed_units is same as the sum of per_prrogram_timings
+        let per_program_sum_units =
+            execute_timings
+                .details
+                .per_program_timings
+                .iter()
+                .fold(0, |acc: u64, (_, program_timing)| {
+                    (std::num::Saturating(acc)
+                        + program_timing.accumulated_units
+                        + program_timing.total_errored_units)
+                        .0
+                });
+        log::info!("==== {executed_units} {per_program_sum_units}");
+        if executed_units != per_program_sum_units {
+            log::warn!("==== unmatch! {executed_units} {per_program_sum_units} tx {:?}", tx.signature());
+        }
+        // end of test
+
         drop(invoke_context);
 
         execute_timings.execute_accessories.process_message_us += process_message_time.as_us();

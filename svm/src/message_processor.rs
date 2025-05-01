@@ -70,12 +70,6 @@ pub(crate) fn process_message(
 
         *accumulated_consumed_units =
             accumulated_consumed_units.saturating_add(compute_units_consumed);
-        execute_timings.details.accumulate_program(
-            program_id,
-            process_instruction_us,
-            compute_units_consumed,
-            result.is_err(),
-        );
         invoke_context.timings = {
             execute_timings.details.accumulate(&invoke_context.timings);
             ExecuteDetailsTimings::default()

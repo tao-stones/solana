@@ -1877,8 +1877,7 @@ fn load_frozen_forks(
         let mut process_single_slot_us = 0;
         let mut voting_us = 0;
 
-        while !pending_slots.is_empty() {
-            let (meta, bank, last_entry_hash) = pending_slots.pop().unwrap();
+        while let Some((meta, bank, last_entry_hash)) = pending_slots.pop() {
             let slot = bank.slot();
             if last_status_report.elapsed() > STATUS_REPORT_INTERVAL {
                 let secs = last_status_report.elapsed().as_secs() as f32;

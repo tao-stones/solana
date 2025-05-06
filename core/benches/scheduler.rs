@@ -110,25 +110,6 @@ impl<Tx: TransactionWithMeta + Send + Sync + 'static> BenchEnv<Tx> {
     }
 }
 
-// to support both schedulers
-macro_rules! timing_scheduler {
-    ($scheduler:expr, $container:expr, $filter_1:expr, $filter_2:expr) => {{
-        let start = Instant::now();
-        {
-            while !$container.is_empty() {
-                $scheduler
-                    .receive_completed(black_box(&mut $container))
-                    .unwrap();
-
-                $scheduler
-                    .schedule(black_box(&mut $container), $filter_1, $filter_2)
-                    .unwrap();
-            }
-        }
-        start.elapsed()
-    }};
-}
-
 fn bench_scheduler_impl<T: ReceiveAndBuffer + utils::ReceiveAndBufferCreator>(
     c: &mut Criterion,
     bench_name: &str,
@@ -157,75 +138,101 @@ fn bench_scheduler_impl<T: ReceiveAndBuffer + utils::ReceiveAndBufferCreator>(
                     group.throughput(Throughput::Elements(*tx_count as u64));
                     group.bench_function(&bench_name, |bencher| {
                         bencher.iter_custom(|iters| {
-                            let utils::ReceiveAndBufferSetup {
-                                txs,
-                                sender,
-                                mut container,
-                                mut receive_and_buffer,
-                                decision,
-                            }: utils::ReceiveAndBufferSetup<T> = utils::setup_receive_and_buffer(
-                                *tx_count,
-                                *ix_count,
-                                0.0,
-                                true,
-                                *conflict_type,
-                            );
-
-                            let mut execute_time: Duration = std::time::Duration::ZERO;
-                            for _i in 0..iters {
-                                // setup new Scheduler and reset/refill Container for each iteration of execution
-                                if sender.send(txs.clone()).is_err() {
-                                    panic!("Unexpectedly dropped receiver!");
-                                }
-                                container.clear();
-                                let mut count_metrics = SchedulerCountMetrics::default();
-                                let mut timing_metrics = SchedulerTimingMetrics::default();
-                                let res = receive_and_buffer.receive_and_buffer_packets(
-                                    &mut container,
-                                    &mut timing_metrics,
-                                    &mut count_metrics,
-                                    &decision,
+                            let setup: utils::ReceiveAndBufferSetup<T> =
+                                utils::setup_receive_and_buffer(
+                                    *tx_count,
+                                    *ix_count,
+                                    0.0,
+                                    true,
+                                    *conflict_type,
                                 );
-                                assert!(res.unwrap() == *tx_count && !container.is_empty());
+                            let bench_env: BenchEnv<T::Transaction> = BenchEnv::new();
 
-                                let bench_env: BenchEnv<T::Transaction> = BenchEnv::new();
-                                let elapsed = if is_greedy_scheduler {
-                                    let scheduler = GreedyScheduler::new(
+                            if is_greedy_scheduler {
+                                timing_scheduler(
+                                    setup,
+                                    &bench_env,
+                                    GreedyScheduler::new(
                                         bench_env.consume_work_senders.clone(),
                                         bench_env.finished_consume_work_receiver.clone(),
                                         GreedySchedulerConfig::default(),
-                                    );
-                                    let mut scheduler = black_box(scheduler);
-                                    timing_scheduler!(
-                                        scheduler,
-                                        container,
-                                        bench_env.filter_1,
-                                        bench_env.filter_2
-                                    )
-                                } else {
-                                    let scheduler = PrioGraphScheduler::new(
+                                    ),
+                                    iters,
+                                )
+                            } else {
+                                timing_scheduler(
+                                    setup,
+                                    &bench_env,
+                                    PrioGraphScheduler::new(
                                         bench_env.consume_work_senders.clone(),
                                         bench_env.finished_consume_work_receiver.clone(),
                                         PrioGraphSchedulerConfig::default(),
-                                    );
-                                    let mut scheduler = black_box(scheduler);
-                                    timing_scheduler!(
-                                        scheduler,
-                                        container,
-                                        bench_env.filter_1,
-                                        bench_env.filter_2
-                                    )
-                                };
-
-                                execute_time = execute_time.saturating_add(elapsed);
+                                    ),
+                                    iters,
+                                )
                             }
-                            execute_time
                         })
                     });
                 }
             }
         }
     }
+}
+
+fn timing_scheduler<T: ReceiveAndBuffer, S: Scheduler<T::Transaction>>(
+    setup: utils::ReceiveAndBufferSetup<T>,
+    bench_env: &BenchEnv<T::Transaction>,
+    mut scheduler: S,
+    iters: u64,
+) -> Duration {
+    let utils::ReceiveAndBufferSetup {
+        txs,
+        sender,
+        mut container,
+        mut receive_and_buffer,
+        decision,
+    }: utils::ReceiveAndBufferSetup<T> = setup;
+
+    let mut execute_time: Duration = std::time::Duration::ZERO;
+    let num_txs: usize = txs.iter().map(|txs| txs.len()).sum();
+    for _i in 0..iters {
+        if sender.send(txs.clone()).is_err() {
+            panic!("Unexpectedly dropped receiver!");
+        }
+        let mut count_metrics = SchedulerCountMetrics::default();
+        let mut timing_metrics = SchedulerTimingMetrics::default();
+        let res = receive_and_buffer.receive_and_buffer_packets(
+            &mut container,
+            &mut timing_metrics,
+            &mut count_metrics,
+            &decision,
+        );
+        assert_eq!(res.unwrap(), num_txs);
+        assert!(!container.is_empty());
+
+        let elapsed = {
+            let start = Instant::now();
+            {
+                while !container.is_empty() {
+                    scheduler
+                        .receive_completed(black_box(&mut container))
+                        .unwrap();
+
+                    scheduler
+                        .schedule(
+                            black_box(&mut container),
+                            bench_env.filter_1,
+                            bench_env.filter_2,
+                        )
+                        .unwrap();
+                }
+            }
+            start.elapsed()
+        };
+
+        execute_time = execute_time.saturating_add(elapsed);
+    }
+    execute_time
 }
 
 fn bench_scheduler(c: &mut Criterion) {

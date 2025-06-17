@@ -403,6 +403,7 @@ dependencies = [
  "solana-system-interface",
  "solana-transaction",
  "solana-transaction-context",
+ "txv1",
 ]
 
 [[package]]

@@ -13160,6 +13160,9 @@ dependencies = [
 [[package]]
 name = "txv1"
 version = "3.0.0"
+dependencies = [
+ "solana-transaction",
+]
 
 [[package]]
 name = "typenum"

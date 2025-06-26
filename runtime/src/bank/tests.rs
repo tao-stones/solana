@@ -2776,10 +2776,6 @@ fn test_bank_hash_internal_state_verify(is_accounts_lt_hash_enabled: bool) {
                 .accounts
                 .remove(&feature_set::accounts_lt_hash::id())
                 .unwrap();
-            genesis_config
-                .accounts
-                .remove(&feature_set::remove_accounts_delta_hash::id())
-                .unwrap();
         }
         let (bank0, bank_forks) = Bank::new_with_bank_forks_for_tests(&genesis_config);
         assert_eq!(
@@ -12702,20 +12698,10 @@ fn test_bank_epoch_stakes() {
 }
 
 /// Ensure rehash() does *not* change the bank hash if accounts are unmodified
-#[test_case(true; "with accounts delta hash")]
-#[test_case(false; "without accounts delta hash")]
-fn test_rehash_accounts_unmodified(has_accounts_delta_hash: bool) {
+#[test]
+fn test_rehash_accounts_unmodified() {
     let ten_sol = 10 * LAMPORTS_PER_SOL;
-    let mut genesis_config_info = genesis_utils::create_genesis_config(ten_sol);
-    if has_accounts_delta_hash {
-        // Keep the accounts delta hash by removing the 'remove_accounts_delta_hash'
-        // feature account from genesis.
-        genesis_config_info
-            .genesis_config
-            .accounts
-            .remove(&feature_set::remove_accounts_delta_hash::id())
-            .unwrap();
-    }
+    let genesis_config_info = genesis_utils::create_genesis_config(ten_sol);
     let bank = Bank::new_for_tests(&genesis_config_info.genesis_config);
 
     let lamports = 123_456_789;
@@ -12738,14 +12724,7 @@ fn test_rehash_accounts_unmodified(has_accounts_delta_hash: bool) {
 #[should_panic(expected = "rehashing is not allowed to change the account state")]
 fn test_rehash_accounts_modified() {
     let ten_sol = 10 * LAMPORTS_PER_SOL;
-    let mut genesis_config_info = genesis_utils::create_genesis_config(ten_sol);
-    // Keep the accounts delta hash by removing the 'remove_accounts_delta_hash'
-    // feature account from genesis.
-    genesis_config_info
-        .genesis_config
-        .accounts
-        .remove(&feature_set::remove_accounts_delta_hash::id())
-        .unwrap();
+    let genesis_config_info = genesis_utils::create_genesis_config(ten_sol);
     let bank = Bank::new_for_tests(&genesis_config_info.genesis_config);
 
     let mut account = AccountSharedData::new(ten_sol, 0, &Pubkey::default());

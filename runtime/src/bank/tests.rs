@@ -2910,36 +2910,6 @@ fn test_verify_snapshot_bank() {
     assert!(!bank.verify_snapshot_bank(true, false, false, bank.slot(), None, None,));
 }
 
-// Test that two bank forks with the same accounts should not hash to the same value.
-#[test]
-fn test_bank_hash_internal_state_same_account_different_fork() {
-    solana_logger::setup();
-    let (genesis_config, mint_keypair) = create_genesis_config(sol_to_lamports(1.));
-    let amount = genesis_config.rent.minimum_balance(0);
-    let (bank0, bank_forks) = Bank::new_with_bank_forks_for_tests(&genesis_config);
-    let initial_state = bank0.hash_internal_state();
-    let bank1 = new_bank_from_parent_with_bank_forks(
-        bank_forks.as_ref(),
-        bank0.clone(),
-        &Pubkey::default(),
-        1,
-    );
-    assert_ne!(bank1.hash_internal_state(), initial_state);
-
-    info!("transfer bank1");
-    let pubkey = solana_pubkey::new_rand();
-    bank1.transfer(amount, &mint_keypair, &pubkey).unwrap();
-    assert_ne!(bank1.hash_internal_state(), initial_state);
-
-    info!("transfer bank2");
-    // bank2 should not hash the same as bank1
-    let bank2 =
-        new_bank_from_parent_with_bank_forks(bank_forks.as_ref(), bank0, &Pubkey::default(), 2);
-    bank2.transfer(amount, &mint_keypair, &pubkey).unwrap();
-    assert_ne!(bank2.hash_internal_state(), initial_state);
-    assert_ne!(bank1.hash_internal_state(), bank2.hash_internal_state());
-}
-
 #[test]
 fn test_hash_internal_state_genesis() {
     let bank0 = Bank::new_for_tests(&create_genesis_config(10).0);

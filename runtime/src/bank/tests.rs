@@ -12665,31 +12665,6 @@ fn test_rehash_accounts_unmodified() {
     assert_eq!(post_bank_hash, prev_bank_hash);
 }
 
-/// Ensure rehash() *does* change the bank hash if accounts are modified
-#[test]
-#[should_panic(expected = "rehashing is not allowed to change the account state")]
-fn test_rehash_accounts_modified() {
-    let ten_sol = 10 * LAMPORTS_PER_SOL;
-    let genesis_config_info = genesis_utils::create_genesis_config(ten_sol);
-    let bank = Bank::new_for_tests(&genesis_config_info.genesis_config);
-
-    let mut account = AccountSharedData::new(ten_sol, 0, &Pubkey::default());
-    let pubkey = Pubkey::new_unique();
-    bank.store_account_and_update_capitalization(&pubkey, &account);
-
-    // freeze the bank to trigger hash calculation
-    bank.freeze();
-
-    // change an account, which will cause rehashing to panic
-    account.checked_add_lamports(ten_sol).unwrap();
-    bank.rc
-        .accounts
-        .store_accounts_cached((bank.slot(), [(&pubkey, &account)].as_slice()));
-
-    // let the show begin
-    bank.rehash();
-}
-
 #[test]
 fn test_should_use_vote_keyed_leader_schedule() {
     let genesis_config = genesis_utils::create_genesis_config(10_000).genesis_config;

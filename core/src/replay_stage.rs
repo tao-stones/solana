@@ -3012,9 +3012,9 @@ impl ReplayStage {
             debug!("bank_slot {:?} is marked dead", bank_slot);
             replay_result.is_slot_dead = true;
         } else {
-        /// TAO - maybe add `is_stateless` to `progress`, so if a bank is marked as
-        /// `stateless`, then don't replay it (further).
-        /// or perhaps the better term is "active bank", "stateless bank", "dead bank"?
+        // TAO - maybe add `is_stateless` to `progress`, so if a bank is marked as
+        // `stateless`, then don't replay it (further).
+        // or perhaps the better term is "active bank", "stateless bank", "dead bank"?
             let bank = bank_forks
                 .read()
                 .unwrap()
@@ -3110,9 +3110,9 @@ impl ReplayStage {
                 match replay_result {
                     Ok(replay_tx_count) => tx_count += replay_tx_count,
                     Err(err) => {
-                        /// TAO - pick WouldExceed error here, branch to mark_stateless_slot(),
-                        /// then continue to check if bank is complete;
-                        /// everythign else go continue as mark_dead_slot() then exit;
+                        // TAO - pick WouldExceed error here, branch to mark_stateless_slot(),
+                        // then continue to check if bank is complete;
+                        // everythign else go continue as mark_dead_slot() then exit;
                         println!("===TAO {:?}", err);
 
                         let root = bank_forks.read().unwrap().root();

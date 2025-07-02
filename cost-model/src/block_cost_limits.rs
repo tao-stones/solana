@@ -26,7 +26,7 @@ pub const INSTRUCTION_DATA_BYTES_COST: u64 = 140 /*bytes per us*/ / COMPUTE_UNIT
 /// calculated by cost_model, based on transaction's signatures, write locks,
 /// data size and built-in and SBF instructions.
 pub const MAX_BLOCK_UNITS: u64 = MAX_BLOCK_UNITS_SIMD_0207;
-pub const MAX_BLOCK_UNITS_SIMD_0207: u64 = 50_000_000;
+pub const MAX_BLOCK_UNITS_SIMD_0207: u64 = 5_000_000;
 pub const MAX_BLOCK_UNITS_SIMD_0256: u64 = 60_000_000;
 
 /// Number of compute units that a writable account in a block is allowed. The

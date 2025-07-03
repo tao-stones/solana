@@ -3117,7 +3117,7 @@ impl ReplayStage {
                         if format!("{:?}", err).contains("WouldExceed") {
                             // Mark slot stateless by undo changes to accounts
                             info!("===TAO bank.remove_unrooted_slots({:?})", bank_slot);
-                            bank.remove_unrooted_slots(bank_slot);
+                            bank.remove_unrooted_slots(&[(bank_slot, bank.bank_id())]);
                             // after undo all changes to accounts db and cache, continue
                             // normal bank completion check, then freeze it when time hgas come.
                             // TAO - need a flag to stop processing future entries for this bank

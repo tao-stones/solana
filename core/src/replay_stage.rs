@@ -3113,27 +3113,36 @@ impl ReplayStage {
                         // TAO - pick WouldExceed error here, branch to mark_stateless_slot(),
                         // then continue to check if bank is complete;
                         // everythign else go continue as mark_dead_slot() then exit;
-                        println!("===TAO {:?}", err);
-
-                        let root = bank_forks.read().unwrap().root();
-                        Self::mark_dead_slot(
-                            blockstore,
-                            bank,
-                            root,
-                            err,
-                            rpc_subscriptions,
-                            slot_status_notifier,
-                            duplicate_slots_tracker,
-                            duplicate_confirmed_slots,
-                            epoch_slots_frozen_slots,
-                            progress,
-                            heaviest_subtree_fork_choice,
-                            duplicate_slots_to_repair,
-                            ancestor_hashes_replay_update_sender,
-                            purge_repair_slot_counter,
-                        );
-                        // don't try to run the below logic to check if the bank is completed
-                        continue;
+                        debug!("===TAO {:?}", err);
+                        if format!("{:?}", err).contains("WouldExceed") {
+                            // Mark slot stateless by undo changes to accounts
+                            info!("===TAO bank.remove_unrooted_slots({:?})", bank_slot);
+                            bank.remove_unrooted_slots(bank_slot);
+                            // after undo all changes to accounts db and cache, continue
+                            // normal bank completion check, then freeze it when time hgas come.
+                            // TAO - need a flag to stop processing future entries for this bank
+                        } else {
+                            // continue to mark slot dead for any other error
+                            let root = bank_forks.read().unwrap().root();
+                            Self::mark_dead_slot(
+                                blockstore,
+                                bank,
+                                root,
+                                err,
+                                rpc_subscriptions,
+                                slot_status_notifier,
+                                duplicate_slots_tracker,
+                                duplicate_confirmed_slots,
+                                epoch_slots_frozen_slots,
+                                progress,
+                                heaviest_subtree_fork_choice,
+                                duplicate_slots_to_repair,
+                                ancestor_hashes_replay_update_sender,
+                                purge_repair_slot_counter,
+                            );
+                            // don't try to run the below logic to check if the bank is completed
+                            continue;
+                        }
                     }
                 }
             }

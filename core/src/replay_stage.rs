@@ -3011,12 +3011,14 @@ impl ReplayStage {
         trace!("Replay active bank: slot {}", bank_slot);
         if progress.get(&bank_slot).map(|p| p.is_dead).unwrap_or(false) {
             // If the fork was marked as dead, don't replay it
-            debug!("bank_slot {:?} is marked dead", bank_slot);
+            info!("TAO bank_slot {:?} is marked dead", bank_slot);
             replay_result.is_slot_dead = true;
+        } else if progress.get(&bank_slot).map(|p| p.retransmit_info.retry_iteration).unwrap_or(0) == 9999 {
+            // TAO HACK - this bank was marked as stateless during prev replay, we can skip the
+            // rest of it now.
+            info!("===TAO bank_slot {:?} is marked as stateless", bank_slot);
+            replay_result.replay_result = Some(Ok(9999));
         } else {
-        // TAO - maybe add `is_stateless` to `progress`, so if a bank is marked as
-        // `stateless`, then don't replay it (further).
-        // or perhaps the better term is "active bank", "stateless bank", "dead bank"?
             let bank = bank_forks
                 .read()
                 .unwrap()
@@ -3112,7 +3114,16 @@ impl ReplayStage {
                 .unwrap();
             if let Some(replay_result) = &replay_result.replay_result {
                 match replay_result {
-                    Ok(replay_tx_count) => tx_count += replay_tx_count,
+                    Ok(replay_tx_count) => {
+                        if *replay_tx_count == 9999 {
+                            // TAO HACK - if replay result is "stateless", then just continue to is_complete and
+                            // freeze bank.
+                            info!("===TAO bank {} is marked as 'stateless', continue to check if its completed", bank_slot);
+                        } else {
+                            // business as usual
+                            tx_count += replay_tx_count;
+                        }
+                    },
                     Err(err) => {
                         // TAO - pick WouldExceed error here, branch to mark_stateless_slot(),
                         // then continue to check if bank is complete;
@@ -3123,8 +3134,17 @@ impl ReplayStage {
                             info!("===TAO bank.remove_unrooted_slots({:?}, {:?})", bank_slot, bank.bank_id());
                             bank.remove_unrooted_slots(&[(bank_slot, bank.bank_id())]);
                             // after undo all changes to accounts db and cache, continue
-                            // normal bank completion check, then freeze it when time hgas come.
-                            // TAO - need a flag to stop processing future entries for this bank
+                            // normal bank completion check, then freeze it when time comes.
+
+                            // TAO - Hack a signal of stateless to stop processing future entries for this bank
+                            // Mark 'progress' of this bank to be stateless, so next round of
+                            // "replay_active_bank()" will not skip the load-executioni-commit.
+                            {
+                            let bank_progress = progress
+                                .get_mut(&bank.slot())
+                                .expect("Bank fork progress entry missing for completed bank");
+                            bank_progress.retransmit_info.retry_iteration = 9999;
+                            }
                         } else {
                             // continue to mark slot dead for any other error
                             let root = bank_forks.read().unwrap().root();
@@ -3180,6 +3200,7 @@ impl ReplayStage {
 
                     if let Err(err) = result {
                         let root = bank_forks.read().unwrap().root();
+                        info!("===TAO mark_dead_slot by unified scheduler err {:?}", err);
                         Self::mark_dead_slot(
                             blockstore,
                             bank,

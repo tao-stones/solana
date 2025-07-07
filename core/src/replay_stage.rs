@@ -124,6 +124,7 @@ pub enum HeaviestForkFailures {
     ),
 }
 
+#[derive(Debug)]
 enum ForkReplayMode {
     Serial,
     Parallel(ThreadPool),
@@ -170,6 +171,7 @@ impl Drop for Finalizer {
     }
 }
 
+#[derive(Debug)]
 struct ReplaySlotFromBlockstore {
     is_slot_dead: bool,
     bank_slot: Slot,
@@ -3095,6 +3097,8 @@ impl ReplayStage {
         let mut did_complete_bank = false;
         let mut tx_count = 0;
         let mut execute_timings = ExecuteTimings::default();
+        info!("===TAO replay results: {:?}", replay_result_vec);
+
         for replay_result in replay_result_vec {
             if replay_result.is_slot_dead {
                 continue;
@@ -3113,10 +3117,10 @@ impl ReplayStage {
                         // TAO - pick WouldExceed error here, branch to mark_stateless_slot(),
                         // then continue to check if bank is complete;
                         // everythign else go continue as mark_dead_slot() then exit;
-                        debug!("===TAO {:?}", err);
+                        info!("===TAO {:?}", err);
                         if format!("{:?}", err).contains("WouldExceed") {
                             // Mark slot stateless by undo changes to accounts
-                            info!("===TAO bank.remove_unrooted_slots({:?})", bank_slot);
+                            info!("===TAO bank.remove_unrooted_slots({:?}, {:?})", bank_slot, bank.bank_id());
                             bank.remove_unrooted_slots(&[(bank_slot, bank.bank_id())]);
                             // after undo all changes to accounts db and cache, continue
                             // normal bank completion check, then freeze it when time hgas come.
@@ -3149,6 +3153,8 @@ impl ReplayStage {
 
             assert_eq!(bank_slot, bank.slot());
             if bank.is_complete() {
+                info!("===TAO bank completed for slot {}, bank id {}", bank.slot(), bank.bank_id());
+
                 let mut bank_complete_time = Measure::start("bank_complete_time");
                 let bank_progress = progress
                     .get_mut(&bank.slot())
@@ -3206,6 +3212,7 @@ impl ReplayStage {
                     ) {
                         Ok(block_id) => block_id,
                         Err(result_err) => {
+                            info!("===TAO bad block of no fec shred, {:?}", result_err);
                             let root = bank_forks.read().unwrap().root();
                             Self::mark_dead_slot(
                                 blockstore,
@@ -3414,10 +3421,11 @@ impl ReplayStage {
     ) -> bool /* completed a bank */ {
         let active_bank_slots = bank_forks.read().unwrap().active_bank_slots();
         let num_active_banks = active_bank_slots.len();
-        trace!(
-            "{} active bank(s) to replay: {:?}",
+        info!(
+            "===TAO {} active bank(s) to replay: {:?}, replay mode {:?}",
             num_active_banks,
-            active_bank_slots
+            active_bank_slots,
+            replay_mode
         );
         if active_bank_slots.is_empty() {
             return false;

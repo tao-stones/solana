@@ -5432,6 +5432,8 @@ impl AccountsDb {
             "Trying to remove accounts for rooted slots {rooted_slots:?}"
         );
 
+        info!("===TAO removing unrooted slots {:?}", remove_slots);
+
         let RemoveUnrootedSlotsSynchronization {
             slots_under_contention,
             signal,
@@ -5462,6 +5464,8 @@ impl AccountsDb {
                 .cloned()
                 .collect();
 
+            info!("===TAO contended_flush_slots {:?}", remaining_contended_flush_slots);
+
             // Wait for cache flushes to finish
             loop {
                 if !remaining_contended_flush_slots.is_empty() {
@@ -5484,6 +5488,8 @@ impl AccountsDb {
                     !currently_contended_slots.insert(*flush_slot)
                 });
             }
+
+            info!("===TAO done flushing cache");
         }
 
         // Mark down these slots are about to be purged so that new attempts to scan these
@@ -5494,6 +5500,7 @@ impl AccountsDb {
             for (_slot, remove_bank_id) in remove_slots.iter() {
                 locked_removed_bank_ids.insert(*remove_bank_id);
             }
+            info!("===TAO perhaps not to remove bank_id? {:?}", locked_removed_bank_ids);
         }
 
         let remove_unrooted_purge_stats = PurgeStats::default();
@@ -5502,7 +5509,8 @@ impl AccountsDb {
             &remove_unrooted_purge_stats,
             true,
         );
-        remove_unrooted_purge_stats.report("remove_unrooted_slots_purge_slots_stats", None);
+        info!("===TAO purged");
+        remove_unrooted_purge_stats.report("TAO-remove_unrooted_slots_purge_slots_stats", None);
 
         let mut currently_contended_slots = slots_under_contention.lock().unwrap();
         for (remove_slot, _) in remove_slots {

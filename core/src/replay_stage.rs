@@ -3100,6 +3100,7 @@ impl ReplayStage {
         let mut tx_count = 0;
         let mut execute_timings = ExecuteTimings::default();
         info!("===TAO replay results: {:?}", replay_result_vec);
+        let mut is_stateless_bank = false;
 
         for replay_result in replay_result_vec {
             if replay_result.is_slot_dead {
@@ -3119,6 +3120,7 @@ impl ReplayStage {
                             // TAO HACK - if replay result is "stateless", then just continue to is_complete and
                             // freeze bank.
                             info!("===TAO bank {} is marked as 'stateless', continue to check if its completed", bank_slot);
+                            is_stateless_bank = true;
                         } else {
                             // business as usual
                             tx_count += replay_tx_count;
@@ -3172,8 +3174,12 @@ impl ReplayStage {
             }
 
             assert_eq!(bank_slot, bank.slot());
-            if bank.is_complete() {
-                info!("===TAO bank completed for slot {}, bank id {}", bank.slot(), bank.bank_id());
+            if bank.is_complete() 
+            // TAO HACK - freeze bank as soon as it's detected as stateless, will this be ok?
+               || is_stateless_bank {
+
+                info!("===TAO bank completed for slot {}, bank id {}, tick height {}, max tick height {}",
+                    bank.slot(), bank.bank_id(), bank.tick_height(), bank.max_tick_height());
 
                 let mut bank_complete_time = Measure::start("bank_complete_time");
                 let bank_progress = progress

@@ -3205,31 +3205,42 @@ impl ReplayStage {
                         .accumulate(metrics, is_unified_scheduler_enabled);
 
                     if let Err(err) = result {
-                        let root = bank_forks.read().unwrap().root();
-                        info!("===TAO mark_dead_slot by unified scheduler err {:?}", err);
-                        Self::mark_dead_slot(
-                            blockstore,
-                            bank,
-                            root,
-                            &BlockstoreProcessorError::InvalidTransaction(err),
-                            rpc_subscriptions,
-                            slot_status_notifier,
-                            duplicate_slots_tracker,
-                            duplicate_confirmed_slots,
-                            epoch_slots_frozen_slots,
-                            progress,
-                            heaviest_subtree_fork_choice,
-                            duplicate_slots_to_repair,
-                            ancestor_hashes_replay_update_sender,
-                            purge_repair_slot_counter,
-                        );
-                        // don't try to run the remaining normal processing for the completed bank
-                        continue;
+                        // TAO HACK - dont mark slot dead if it's WouldExceed error that is handled
+                        // elsewhere
+                        if !format!("{:?}", err).contains("WouldExceed") {
+
+                            let root = bank_forks.read().unwrap().root();
+                            info!("===TAO mark_dead_slot by unified scheduler err {:?}", err);
+                            Self::mark_dead_slot(
+                                blockstore,
+                                bank,
+                                root,
+                                &BlockstoreProcessorError::InvalidTransaction(err),
+                                rpc_subscriptions,
+                                slot_status_notifier,
+                                duplicate_slots_tracker,
+                                duplicate_confirmed_slots,
+                                epoch_slots_frozen_slots,
+                                progress,
+                                heaviest_subtree_fork_choice,
+                                duplicate_slots_to_repair,
+                                ancestor_hashes_replay_update_sender,
+                                purge_repair_slot_counter,
+                            );
+                            // don't try to run the remaining normal processing for the completed bank
+                            continue;
+                        }
                     }
                 }
 
                 let is_leader_block = bank.collector_id() == my_pubkey;
-                let block_id = if !is_leader_block {
+                let block_id = if !is_leader_block
+                    // TAO HACK - not to perform last fec check for stateless bank for now. Don't
+                    // know what to do about this yet.
+                    // stateless bank should still have a valid block_id, which is part of bank
+                    // hash (right?). 
+                    && !is_stateless_bank
+                {
                     // If the block does not have at least DATA_SHREDS_PER_FEC_BLOCK correctly retransmitted
                     // shreds in the last FEC set, mark it dead. No reason to perform this check on our leader block.
                     match blockstore.check_last_fec_set_and_get_block_id(

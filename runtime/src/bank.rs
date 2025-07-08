@@ -556,6 +556,7 @@ impl PartialEq for Bank {
             // Ignore new fields explicitly if they do not impact PartialEq.
             // Adding ".." will remove compile-time checks that if a new field
             // is added to the struct, this PartialEq is accordingly updated.
+            is_stateless: _,
         } = self;
         *blockhash_queue.read().unwrap() == *other.blockhash_queue.read().unwrap()
             && ancestors == &other.ancestors
@@ -903,6 +904,10 @@ pub struct Bank {
     /// This is used to avoid recalculating the same epoch rewards at epoch boundary.
     /// The hashmap is keyed by parent_hash.
     epoch_rewards_calculation_cache: Arc<Mutex<HashMap<Hash, Arc<PartitionedRewardsCalculation>>>>,
+
+
+    // TAO HACK - mark to true when the bank is identified as stateless
+    pub is_stateless: AtomicBool,
 }
 
 #[derive(Debug)]
@@ -1100,6 +1105,7 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::default(),
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
+            is_stateless: AtomicBool::new(false),
         };
 
         bank.transaction_processor =
@@ -1353,6 +1359,7 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::default(),
             epoch_rewards_calculation_cache: parent.epoch_rewards_calculation_cache.clone(),
+            is_stateless: AtomicBool::new(false),
         };
 
         let (_, ancestors_time_us) = measure_us!({
@@ -1803,6 +1810,7 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::new(&fields.bank_hash_stats),
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
+            is_stateless: AtomicBool::new(false),
         };
 
         bank.transaction_processor =
@@ -5590,6 +5598,14 @@ impl Bank {
     /// Return total transaction fee collected
     pub fn get_collector_fee_details(&self) -> CollectorFeeDetails {
         self.collector_fee_details.read().unwrap().clone()
+    }
+
+    pub fn is_stateless(&self) -> bool {
+        self.is_stateless.load(Relaxed)
+    }
+
+    pub fn set_stateless(&self, value: bool) {
+        self.is_stateless.store(value, Relaxed);
     }
 }
 

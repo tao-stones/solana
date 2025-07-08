@@ -5062,6 +5062,8 @@ impl AccountsDb {
         );
         remove_unrooted_purge_stats.report("remove_unrooted_slots_purge_slots_stats", None);
 
+        info!("===TAO finished remove_unrooted_slots: {:?}", remove_slots);
+
         let mut currently_contended_slots = slots_under_contention.lock().unwrap();
         for (remove_slot, _) in remove_slots {
             assert!(currently_contended_slots.remove(remove_slot));

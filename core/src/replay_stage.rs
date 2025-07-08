@@ -169,6 +169,7 @@ impl Drop for Finalizer {
     }
 }
 
+#[derive(Debug)]
 struct ReplaySlotFromBlockstore {
     is_slot_dead: bool,
     bank_slot: Slot,
@@ -2990,7 +2991,7 @@ impl ReplayStage {
         trace!("Replay active bank: slot {bank_slot}");
         if progress.get(&bank_slot).map(|p| p.is_dead).unwrap_or(false) {
             // If the fork was marked as dead, don't replay it
-            debug!("bank_slot {bank_slot:?} is marked dead");
+            info!("===TAO bank_slot {:?} is marked dead", bank_slot);
             replay_result.is_slot_dead = true;
         } else {
             let bank = bank_forks
@@ -3073,6 +3074,9 @@ impl ReplayStage {
         let mut did_complete_bank = false;
         let mut tx_count = 0;
         let mut execute_timings = ExecuteTimings::default();
+
+        info!("===TAO replay results: {:?}", replay_result_vec);
+
         for replay_result in replay_result_vec {
             if replay_result.is_slot_dead {
                 continue;
@@ -3088,31 +3092,45 @@ impl ReplayStage {
                 match replay_result {
                     Ok(replay_tx_count) => tx_count += replay_tx_count,
                     Err(err) => {
-                        let root = bank_forks.read().unwrap().root();
-                        Self::mark_dead_slot(
-                            blockstore,
-                            bank,
-                            root,
-                            err,
-                            rpc_subscriptions,
-                            slot_status_notifier,
-                            duplicate_slots_tracker,
-                            duplicate_confirmed_slots,
-                            epoch_slots_frozen_slots,
-                            progress,
-                            heaviest_subtree_fork_choice,
-                            duplicate_slots_to_repair,
-                            ancestor_hashes_replay_update_sender,
-                            purge_repair_slot_counter,
-                        );
-                        // don't try to run the below logic to check if the bank is completed
-                        continue;
+                        // TAO - pick WouldExceed error here, branch to mark_stateless_slot(),
+                        // then continue to check if bank is complete;
+                        // everythign else go continue as mark_dead_slot() then exit;
+                        info!("===TAO {:?}", err);
+                        if format!("{:?}", err).contains("WouldExceed") {
+                            // Mark da bank stateless, then continue "normal" process. Blockstore
+                            // will skip executing remaining transactions for stateless bank, but
+                            // will continue register ticks.
+                            bank.set_stateless(true);
+                        } else {
+                            let root = bank_forks.read().unwrap().root();
+                            Self::mark_dead_slot(
+                                blockstore,
+                                bank,
+                                root,
+                                err,
+                                rpc_subscriptions,
+                                slot_status_notifier,
+                                duplicate_slots_tracker,
+                                duplicate_confirmed_slots,
+                                epoch_slots_frozen_slots,
+                                progress,
+                                heaviest_subtree_fork_choice,
+                                duplicate_slots_to_repair,
+                                ancestor_hashes_replay_update_sender,
+                                purge_repair_slot_counter,
+                            );
+                            // don't try to run the below logic to check if the bank is completed
+                            continue;
+                        }
                     }
                 }
             }
 
             assert_eq!(bank_slot, bank.slot());
             if bank.is_complete() {
+                info!("===TAO bank completed for slot {}, bank id {}, tick height {}, max tick height {}, is stateless {}",
+                    bank.slot(), bank.bank_id(), bank.tick_height(), bank.max_tick_height(), bank.is_stateless());
+
                 let mut bank_complete_time = Measure::start("bank_complete_time");
                 let bank_progress = progress
                     .get_mut(&bank.slot())
@@ -3194,6 +3212,18 @@ impl ReplayStage {
                     None
                 };
                 bank.set_block_id(block_id);
+
+                info!("===TAO bank {} block id {:?} is ready for freeze", bank_slot, block_id);
+
+                // TAO HACK - if it's stateless bank, undo all account changes before freezing
+                if bank.is_stateless() {
+                    info!("===TAO bank.remove_unrooted_slots({:?}, {:?})", bank_slot, bank.bank_id());
+                    bank.remove_unrooted_slots(&[(bank_slot, bank.bank_id())]);
+                }
+                            // after undo all changes to accounts db and cache, continue
+                            //
+                            // normal bank completion check, then freeze it when time comes.
+
                 // Freeze the bank before sending to any auxiliary threads
                 // that may expect to be operating on a frozen bank
                 bank.freeze();

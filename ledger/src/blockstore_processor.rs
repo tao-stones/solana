@@ -682,24 +682,30 @@ fn process_entries(
                 }
             }
             EntryType::Transactions(transactions) => {
-                queue_batches_with_lock_retry(
-                    bank,
-                    starting_index,
-                    transactions,
-                    &mut batches,
-                    |batches| {
-                        process_batches(
-                            bank,
-                            replay_tx_thread_pool,
-                            batches,
-                            transaction_status_sender,
-                            replay_vote_sender,
-                            batch_timing,
-                            log_messages_bytes_limit,
-                            prioritization_fee_cache,
-                        )
-                    },
-                )?;
+                // TAO HACK - skip loading and executing remaining transactions if a bank is marked
+                // as stateless
+                if bank.is_stateless() {
+                    info!("===TAO skipping processing transactions for stateless bank slot {}, id {}", bank.slot(), bank.bank_id());
+                } else {
+                    queue_batches_with_lock_retry(
+                        bank,
+                        starting_index,
+                        transactions,
+                        &mut batches,
+                        |batches| {
+                            process_batches(
+                                bank,
+                                replay_tx_thread_pool,
+                                batches,
+                                transaction_status_sender,
+                                replay_vote_sender,
+                                batch_timing,
+                                log_messages_bytes_limit,
+                                prioritization_fee_cache,
+                            )
+                        },
+                    )?;
+                }
             }
         }
     }

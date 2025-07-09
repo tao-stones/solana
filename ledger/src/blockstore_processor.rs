@@ -709,6 +709,14 @@ fn process_entries(
             }
         }
     }
+    // TAO HACK - how bad is it to register ticks before processing batches?
+    // Reason: originally if processing batch(es) failed, it would exit immediately then skip tick
+    // registeration. Which is fine since the block will be marked as dead; However for stateless
+    // block, it'd be nice to have ticks continue while skipping tx processing, so the downstream
+    // pipeline will not compliant about tick count mismatch or PoH mismatch.
+    for hash in tick_hashes {
+        bank.register_tick(&hash);
+    }
     process_batches(
         bank,
         replay_tx_thread_pool,
@@ -719,9 +727,6 @@ fn process_entries(
         log_messages_bytes_limit,
         prioritization_fee_cache,
     )?;
-    for hash in tick_hashes {
-        bank.register_tick(&hash);
-    }
     Ok(())
 }
 
@@ -1574,7 +1579,7 @@ fn confirm_slot_entries(
 
     if !skip_verification {
         let tick_hash_count = &mut progress.tick_hash_count;
-        verify_ticks(bank, &entries, slot_full, tick_hash_count).map_err(|err| {
+        let result = verify_ticks(bank, &entries, slot_full, tick_hash_count).map_err(|err| {
             warn!(
                 "{:#?}, slot: {}, entry len: {}, tick_height: {}, last entry: {}, last_blockhash: \
                  {}, shred_index: {}, slot_full: {}",
@@ -1588,7 +1593,13 @@ fn confirm_slot_entries(
                 slot_full,
             );
             err
-        })?;
+        });
+        // TAO HACK - skip tick verificatino for now if its stateless
+        if bank.is_stateless() {
+            info!("===TAO ignoring invalid tick hashes count for stateless bank");
+        } else {
+            result?;
+        }
     }
 
     let last_entry_hash = entries.last().map(|e| e.hash);

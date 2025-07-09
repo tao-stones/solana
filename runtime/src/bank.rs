@@ -2945,6 +2945,7 @@ impl Bank {
     }
 
     pub fn is_complete(&self) -> bool {
+        info!("===TAO bank slot {}, tick_height{}, max_tick_height {}", self.slot(), self.tick_height(), self.max_tick_height());
         self.tick_height() == self.max_tick_height()
     }
 

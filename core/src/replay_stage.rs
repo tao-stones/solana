@@ -3095,12 +3095,13 @@ impl ReplayStage {
                         // TAO - pick WouldExceed error here, branch to mark_stateless_slot(),
                         // then continue to check if bank is complete;
                         // everythign else go continue as mark_dead_slot() then exit;
-                        info!("===TAO {:?}", err);
                         if format!("{:?}", err).contains("WouldExceed") {
                             // Mark da bank stateless, then continue "normal" process. Blockstore
                             // will skip executing remaining transactions for stateless bank, but
                             // will continue register ticks.
                             bank.set_stateless(true);
+                            info!("===TAO marked bank slot {}, bank_id {}, is_stateless {}, tick_height {:?}, hashes_per_tick {:?}", 
+                                bank.slot(), bank.bank_id(), bank.is_stateless(), bank.tick_height(), bank.hashes_per_tick());
                         } else {
                             let root = bank_forks.read().unwrap().root();
                             Self::mark_dead_slot(

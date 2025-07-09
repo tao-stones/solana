@@ -3156,25 +3156,30 @@ impl ReplayStage {
                         .accumulate(metrics, is_unified_scheduler_enabled);
 
                     if let Err(err) = result {
-                        let root = bank_forks.read().unwrap().root();
-                        Self::mark_dead_slot(
-                            blockstore,
-                            bank,
-                            root,
-                            &BlockstoreProcessorError::InvalidTransaction(err),
-                            rpc_subscriptions,
-                            slot_status_notifier,
-                            duplicate_slots_tracker,
-                            duplicate_confirmed_slots,
-                            epoch_slots_frozen_slots,
-                            progress,
-                            heaviest_subtree_fork_choice,
-                            duplicate_slots_to_repair,
-                            ancestor_hashes_replay_update_sender,
-                            purge_repair_slot_counter,
-                        );
-                        // don't try to run the remaining normal processing for the completed bank
-                        continue;
+                        // TAO HACK - don't mark slot dead if it is already marked as stateless
+                        if !bank.is_stateless() {
+                            info!("===TAO ignonring scheduler err {:?} for stateless bank", err);
+                        } else {
+                            let root = bank_forks.read().unwrap().root();
+                            Self::mark_dead_slot(
+                                blockstore,
+                                bank,
+                                root,
+                                &BlockstoreProcessorError::InvalidTransaction(err),
+                                rpc_subscriptions,
+                                slot_status_notifier,
+                                duplicate_slots_tracker,
+                                duplicate_confirmed_slots,
+                                epoch_slots_frozen_slots,
+                                progress,
+                                heaviest_subtree_fork_choice,
+                                duplicate_slots_to_repair,
+                                ancestor_hashes_replay_update_sender,
+                                purge_repair_slot_counter,
+                            );
+                            // don't try to run the remaining normal processing for the completed bank
+                            continue;
+                        }
                     }
                 }
 
@@ -3189,25 +3194,32 @@ impl ReplayStage {
                     ) {
                         Ok(block_id) => block_id,
                         Err(result_err) => {
-                            let root = bank_forks.read().unwrap().root();
-                            Self::mark_dead_slot(
-                                blockstore,
-                                bank,
-                                root,
-                                &result_err,
-                                rpc_subscriptions,
-                                slot_status_notifier,
-                                duplicate_slots_tracker,
-                                duplicate_confirmed_slots,
-                                epoch_slots_frozen_slots,
-                                progress,
-                                heaviest_subtree_fork_choice,
-                                duplicate_slots_to_repair,
-                                ancestor_hashes_replay_update_sender,
-                                purge_repair_slot_counter,
-                            );
-                            continue;
-                        }
+                            // TAO HACK - don't know how to handle this error yet, for now, dont
+                            // mark slot dead if it's stateless already
+                            if bank.is_stateless() {
+                                info!("===TAO ignoring last_fec error {:?} for stateless bank", result_err);
+                                None
+                            } else {
+                                let root = bank_forks.read().unwrap().root();
+                                Self::mark_dead_slot(
+                                    blockstore,
+                                    bank,
+                                    root,
+                                    &result_err,
+                                    rpc_subscriptions,
+                                    slot_status_notifier,
+                                    duplicate_slots_tracker,
+                                    duplicate_confirmed_slots,
+                                    epoch_slots_frozen_slots,
+                                    progress,
+                                    heaviest_subtree_fork_choice,
+                                    duplicate_slots_to_repair,
+                                    ancestor_hashes_replay_update_sender,
+                                    purge_repair_slot_counter,
+                                );
+                                continue;
+                            }
+                        },
                     }
                 } else {
                     None

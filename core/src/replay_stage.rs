@@ -3233,9 +3233,6 @@ impl ReplayStage {
                     info!("===TAO bank.remove_unrooted_slots({:?}, {:?})", bank_slot, bank.bank_id());
                     bank.remove_unrooted_slots(&[(bank_slot, bank.bank_id())]);
                 }
-                            // after undo all changes to accounts db and cache, continue
-                            //
-                            // normal bank completion check, then freeze it when time comes.
 
                 // Freeze the bank before sending to any auxiliary threads
                 // that may expect to be operating on a frozen bank

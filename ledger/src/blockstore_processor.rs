@@ -666,6 +666,13 @@ fn process_entries(
                 if bank.is_block_boundary(bank.tick_height() + tick_hashes.len() as u64) {
                     // If it's a tick that will cause a new blockhash to be created,
                     // execute the group and register the tick
+    
+                    // TAO HACK - how bad is it to register ticks before processing batches?
+                    // Reason: originally if processing batch(es) failed, it would exit immediately then skip tick
+                    // registeration. Which is fine since the block will be marked as dead; However for stateless
+                    // block, it'd be nice to have ticks continue while skipping tx processing, so the downstream
+                    // pipeline will not compliant about tick count mismatch or PoH mismatch.
+                    let process_results = 
                     process_batches(
                         bank,
                         replay_tx_thread_pool,
@@ -675,17 +682,18 @@ fn process_entries(
                         batch_timing,
                         log_messages_bytes_limit,
                         prioritization_fee_cache,
-                    )?;
+                    );
                     for hash in tick_hashes.drain(..) {
                         bank.register_tick(&hash);
                     }
+                    process_results?;
                 }
             }
             EntryType::Transactions(transactions) => {
                 // TAO HACK - skip loading and executing remaining transactions if a bank is marked
                 // as stateless
                 if bank.is_stateless() {
-                    info!("===TAO skipping processing transactions for stateless bank slot {}, id {}", bank.slot(), bank.bank_id());
+                    info!("===TAO skipping processing {} transactions for stateless bank slot {}, id {}", transactions.len(), bank.slot(), bank.bank_id());
                 } else {
                     queue_batches_with_lock_retry(
                         bank,
@@ -714,10 +722,7 @@ fn process_entries(
     // registeration. Which is fine since the block will be marked as dead; However for stateless
     // block, it'd be nice to have ticks continue while skipping tx processing, so the downstream
     // pipeline will not compliant about tick count mismatch or PoH mismatch.
-    for hash in tick_hashes {
-        bank.register_tick(&hash);
-    }
-    process_batches(
+    let process_results = process_batches(
         bank,
         replay_tx_thread_pool,
         batches.into_iter(),
@@ -726,7 +731,11 @@ fn process_entries(
         batch_timing,
         log_messages_bytes_limit,
         prioritization_fee_cache,
-    )?;
+    );
+    for hash in tick_hashes {
+        bank.register_tick(&hash);
+    }
+    process_results?;
     Ok(())
 }
 

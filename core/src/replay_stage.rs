@@ -3157,7 +3157,7 @@ impl ReplayStage {
 
                     if let Err(err) = result {
                         // TAO HACK - don't mark slot dead if it is already marked as stateless
-                        if !bank.is_stateless() {
+                        if bank.is_stateless() {
                             info!("===TAO ignonring scheduler err {:?} for stateless bank", err);
                         } else {
                             let root = bank_forks.read().unwrap().root();

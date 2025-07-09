@@ -3243,6 +3243,32 @@ impl ReplayStage {
                     ("hash", bank.hash().to_string(), String),
                 );
 
+                // TAO - stateless bank should only have poh advanced, nothing else should change
+                if bank.is_stateless() {
+                    // no cap changed
+                    {
+                        assert_eq!(bank.capitalization(), bank.parent().unwrap().capitalization());
+                    }
+                    // no rent collected, if still applicatible 
+                    {
+                    //    assert_eq!(bank.rent_collected(), 0);
+                    }
+                    // no accounts change
+                    {
+                    //    assert_eq!(bank.accounts_lt_hash.lock().unwrap(), bank.parent().unwrap().accounts_lt_hash.lock().unwrap());
+                    }
+                    // this bank's accounts_lt_cache should be directly from its parent
+                    {
+                    //    assert_eq!(bank.cache_for_accounts_lt_hash, bank.parent().unwrap().cache_for_accounts_lt_hash);
+                    }
+                    // no accounts_db change
+                    {
+                    //    assert_eq!(bank.rc.accounts.accounts_db, bank.parent().unwrap().rc.accounts.accounts_db);
+                    }
+                    // if accounts_delta_has is still available, it shoudl not changed
+                    // accounts_delta_hash is Hash::default() ?
+                }
+
                 let r_replay_stats = replay_stats.read().unwrap();
                 let replay_progress = bank_progress.replay_progress.clone();
                 let r_replay_progress = replay_progress.read().unwrap();

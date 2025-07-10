@@ -3268,10 +3268,7 @@ impl ReplayStage {
                             parent_accounts_lt_hash.0.checksum(),
                         );
                     }
-                    // this bank's cache_for_accounts_lt_hash should be its inital stattus directly from its parent
-                    {
-                    //    assert_eq!(bank.cache_for_accounts_lt_hash, bank.parent().unwrap().cache_for_accounts_lt_hash);
-                    }
+                    // 4. Should also check this bank's cache_for_accounts_lt_hash? Does it have any significance beyond accounts_lt_hash?
                 }
 
                 let r_replay_stats = replay_stats.read().unwrap();

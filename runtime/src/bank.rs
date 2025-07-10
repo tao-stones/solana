@@ -2499,10 +2499,6 @@ impl Bank {
         // record and commit are finished, those transactions will be
         // committed before this write lock can be obtained here.
         let mut hash = self.hash.write().unwrap();
-
-
-        // TAO HACK - check out if cache_for_accounts_lt_hash is worth checking
-        info!("===TAO this cache_for_accounts_lt_hash {:?}, parent {:?}", self.cache_for_accounts_lt_hash, self.parent().unwrap().cache_for_accounts_lt_hash);
         if *hash == Hash::default() {
             // TAO HACK - do not change account state if is stateless:
             // no fee distribution, no capitalization change, etc

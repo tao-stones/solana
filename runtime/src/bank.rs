@@ -2500,10 +2500,17 @@ impl Bank {
         // committed before this write lock can be obtained here.
         let mut hash = self.hash.write().unwrap();
         if *hash == Hash::default() {
-            // finish up any deferred changes to account state
-            self.distribute_transaction_fee_details();
-            self.update_slot_history();
-            self.run_incinerator();
+            // TAO HACK - do not change account state if is stateless:
+            // no fee distribution, no capitalization change, etc
+            if !self.is_stateless() { 
+                // finish up any deferred changes to account state
+                self.distribute_transaction_fee_details();
+                // TAO NOTE - should stateless slot updates slot_history sysvar account?
+                // it is currently used for vote and fork choices
+                self.update_slot_history();
+                // TAO NOTE - not going to burn incinerator
+                self.run_incinerator();
+            }
 
             // freeze is a one-way trip, idempotent
             self.freeze_started.store(true, Relaxed);

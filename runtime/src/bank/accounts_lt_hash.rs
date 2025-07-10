@@ -27,7 +27,17 @@ impl Bank {
     pub fn update_accounts_lt_hash(&self) {
         let delta_lt_hash = self.calculate_delta_lt_hash();
         let mut accounts_lt_hash = self.accounts_lt_hash.lock().unwrap();
+        let pre_accounts_lt_hash_checksum = accounts_lt_hash.0.checksum();
         accounts_lt_hash.0.mix_in(&delta_lt_hash);
+
+        // dedbugging/testing
+        log::info!(
+            "===TAO updated accounts lattice hash for slot {}, pre accounts_lt_hash checksum: {}, delta_lt_hash checksum: {}, accounts_lt_hash checksum: {}",
+            self.slot(),
+            pre_accounts_lt_hash_checksum,
+            delta_lt_hash.checksum(),
+            accounts_lt_hash.0.checksum(),
+        );
     }
 
     /// Calculates the lt hash *of only this slot*

@@ -2499,6 +2499,10 @@ impl Bank {
         // record and commit are finished, those transactions will be
         // committed before this write lock can be obtained here.
         let mut hash = self.hash.write().unwrap();
+
+
+        // TAO HACK - check out if cache_for_accounts_lt_hash is worth checking
+        info!("===TAO this cache_for_accounts_lt_hash {:?}, parent {:?}", self.cache_for_accounts_lt_hash, self.parent().unwrap().cache_for_accounts_lt_hash);
         if *hash == Hash::default() {
             // TAO HACK - do not change account state if is stateless:
             // no fee distribution, no capitalization change, etc
@@ -5610,12 +5614,17 @@ impl Bank {
         self.collector_fee_details.read().unwrap().clone()
     }
 
+    // TAO HACK - below
     pub fn is_stateless(&self) -> bool {
         self.is_stateless.load(Relaxed)
     }
 
     pub fn set_stateless(&self, value: bool) {
         self.is_stateless.store(value, Relaxed);
+    }
+
+    pub fn accounts_lt_hash(&self) -> AccountsLtHash {
+        self.accounts_lt_hash.lock().unwrap().clone()
     }
 }
 

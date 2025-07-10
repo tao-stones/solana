@@ -3245,28 +3245,33 @@ impl ReplayStage {
 
                 // TAO - stateless bank should only have poh advanced, nothing else should change
                 if bank.is_stateless() {
-                    // no cap changed
+                    // 1. no capitalization changed
                     {
-                        assert_eq!(bank.capitalization(), bank.parent().unwrap().capitalization());
+                        let this_cap = bank.capitalization();
+                        let parent_cap = bank.parent().unwrap().capitalization();
+                        assert_eq!(this_cap, parent_cap, "stateless slot {} must not change capitalization, stateless {}, parent {}",
+                            bank_slot, this_cap, parent_cap);
                     }
-                    // no rent collected, if still applicatible 
+                    // 2. Since SIMD-84 Disable Rent Fees Collection, bank no longer collect nor
+                    // distribute rents
+                    //
+                    // 3. no accounts change
                     {
-                    //    assert_eq!(bank.rent_collected(), 0);
+                        let this_accounts_lt_hash = bank.accounts_lt_hash();
+                        let parent_accounts_lt_hash = bank.parent().unwrap().accounts_lt_hash();
+                        assert_eq!(
+                            this_accounts_lt_hash,
+                            parent_accounts_lt_hash,
+                            "stateless slot {} must not change accounts lt hash! stateless checksum: {}, parent checksum: {}",
+                            bank_slot,
+                            this_accounts_lt_hash.0.checksum(),
+                            parent_accounts_lt_hash.0.checksum(),
+                        );
                     }
-                    // no accounts change
-                    {
-                    //    assert_eq!(bank.accounts_lt_hash.lock().unwrap(), bank.parent().unwrap().accounts_lt_hash.lock().unwrap());
-                    }
-                    // this bank's accounts_lt_cache should be directly from its parent
+                    // this bank's cache_for_accounts_lt_hash should be its inital stattus directly from its parent
                     {
                     //    assert_eq!(bank.cache_for_accounts_lt_hash, bank.parent().unwrap().cache_for_accounts_lt_hash);
                     }
-                    // no accounts_db change
-                    {
-                    //    assert_eq!(bank.rc.accounts.accounts_db, bank.parent().unwrap().rc.accounts.accounts_db);
-                    }
-                    // if accounts_delta_has is still available, it shoudl not changed
-                    // accounts_delta_hash is Hash::default() ?
                 }
 
                 let r_replay_stats = replay_stats.read().unwrap();

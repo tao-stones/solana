@@ -3156,6 +3156,14 @@ impl ReplayStage {
                         .accumulate(metrics, is_unified_scheduler_enabled);
 
                     if let Err(err) = result {
+                        // TAO - async unified scheduler may deliver transactino execution results late,
+                        // but is guaranteed to propagate them eventually via the blocking function
+                        // wait_for_completed_scheduler() here. So we need to catch up
+                        // WouldExceed... error here too.
+                        if format!("{:?}", err).contains("WouldExceed") {
+                            bank.set_stateless(true);
+                            info!("===TAO marked completed bank slot {} stateless", bank.slot());
+                        }
                         // TAO HACK - don't mark slot dead if it is already marked as stateless
                         if bank.is_stateless() {
                             info!("===TAO ignonring scheduler err {:?} for stateless bank", err);

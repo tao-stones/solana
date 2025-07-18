@@ -49,3 +49,17 @@ impl TransactionExecutionDetails {
         self.status.is_ok()
     }
 }
+
+#[cfg(feature = "dev-context-only-utils")]
+impl Default for TransactionExecutionDetails {
+    fn default() -> Self {
+        TransactionExecutionDetails {
+            status: Ok(()),
+            log_messages: None,
+            inner_instructions: None,
+            return_data: None,
+            executed_units: 0,
+            accounts_data_len_delta: 0,
+        }
+    }
+}

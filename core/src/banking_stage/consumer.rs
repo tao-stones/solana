@@ -7,6 +7,7 @@ use {
     },
     itertools::Itertools,
     solana_clock::MAX_PROCESSING_AGE,
+    solana_cost_model::{cost_model::CostModel, cost_tracker::CostTracker},
     solana_fee::FeeFeatures,
     solana_fee_structure::FeeBudgetLimits,
     solana_measure::measure_us,
@@ -24,7 +25,9 @@ use {
     solana_svm::{
         account_loader::validate_fee_payer,
         transaction_error_metrics::TransactionErrorMetrics,
-        transaction_processing_result::TransactionProcessingResultExtensions,
+        transaction_processing_result::{
+            TransactionProcessingResult, TransactionProcessingResultExtensions,
+        },
         transaction_processor::{ExecutionRecordingConfig, TransactionProcessingConfig},
     },
     solana_transaction_error::TransactionError,
@@ -163,6 +166,7 @@ impl Consumer {
         txs: &[impl TransactionWithMeta],
         pre_results: impl Iterator<Item = Result<(), TransactionError>>,
     ) -> ProcessTransactionBatchOutput {
+        //* TAO - not to reserve requested CUs
         let (
             (transaction_qos_cost_results, cost_model_throttled_transactions_count),
             cost_model_us,
@@ -182,6 +186,11 @@ impl Consumer {
                 Err(err) => Err(err.clone()),
             })
         ));
+        // */
+        /* TODO - can do some filtering here to avoid executing heavy TXs that wouldn't fit afterwards
+        let (batch, lock_us) = measure_us!(bank.prepare_sanitized_batch_with_results(
+                txs, pre_results));
+        // */
 
         // retryable_txs includes AccountInUse, WouldExceedMaxBlockCostLimit
         // WouldExceedMaxAccountCostLimit, WouldExceedMaxVoteCostLimit
@@ -192,6 +201,8 @@ impl Consumer {
         // Once the accounts are new transactions can enter the pipeline to process them
         let (_, unlock_us) = measure_us!(drop(batch));
 
+        //* TAO - no need to adjust with actual results. transactions that were recorded and
+        //        committed are those can fit into block
         let ExecuteAndCommitTransactionsOutput {
             ref commit_transactions_result,
             ..
@@ -206,7 +217,7 @@ impl Consumer {
             commit_transactions_result.as_ref().ok(),
             bank,
         );
-
+        // */
         // reports qos service stats for this batch
         self.qos_service.report_metrics(bank.slot());
 
@@ -223,6 +234,156 @@ impl Consumer {
             cost_model_us,
             execute_and_commit_transactions_output,
         }
+    }
+
+    /*
+    fn execute_and_commit_locked_transactions(
+        &self,
+        bank: &Arc<Bank>,
+        batch: &TransactionBatch<impl TransactinoWithMeta>,
+    ) -> ExecuteAndCommitTransactionsOutput {
+        let mut execute_and_commit_timings = LeaderExecuteAndCommitTimings::default();
+        let mut error_counters = TransactionErrorMetrics::default();
+
+        // collecting retryables:
+        ley mut retryable_transaction_indexes: <Vec<_> = batch
+            .lock_results().iter().enumarate().filter_map(|(index, res)| match res {
+                // retryable error from account locking
+                Err(TransactionError::AccountInUse) => Some(index),
+                Err(_) => None,
+                Ok(_) => None,
+            }).collect();
+
+        // load and execute locked transactions
+        let (load_and_execute_transactions_output, load_execute_us) = measure_us!(bank
+            .load_and_execute_transactions(
+                batch,
+                MAX_PROCESSING_AGE,
+                &mut execute_and_commit_timings.execute_timings,
+                &mut error_counters,
+                TransactionProcessingConfig {
+                    account_overrides: None,
+                    check_program_modification_slot: bank.check_program_modification_slot(),
+                    log_messages_bytes_limit: self.log_messages_bytes_limit,
+                    limit_to_load_programs: true,
+                    recording_config: ExecutionRecordingConfig::new_single_setting(
+                        self.committer.transaction_status_sender_enabled()
+                    ),
+                }
+            ));
+        execute_and_commit_timings.load_execute_us = load_execute_us;
+
+        let LoadAndExecuteTransactionsOutput {
+            processing_results,
+            processed_counts,
+            balance_collector,
+        } = load_and_execute_transactions_output;
+
+        // lock cost tracker for CU accounting, record and commit
+        {
+            // acquire cost_tracker lock
+            let (mut cost_tracker, acquire_cost_tracker_us) = measure_us!(bank.write_cost_tracker().unwrap());
+
+            // for each processed-tx, get its actual cost, check if would-fit. Yes ->
+            // recordable-tx; No -> retryabletx-indexes
+            //
+            // 1. processing_result + cost_tracker.would_fit => recordable_results, retryable_indexes
+            let processed_and_cost_tracked_results = Self::cost_tracking_executed_transactions(processing_results, batch.sanitized_transactios(), cost_tracker, &bank.feature_set);
+
+            retryable_transaction_indexes.extend(processed_and_cost_tracked_results.iter().enumerate().filter_map(
+                    |(index, result|) match result {
+                        Err(TransactionError::WouldExceedMaxBlockCostLimit) => {
+                            error_counters.would_exceed_max_block_cost_limit += 1;
+                            Some(index)
+                        }
+                        Err(TransactionError::WouldExceedMaxVoteCostLimit) => {
+                            error_counters.would_exceed_max_vote_cost_limit += 1;
+                            Some(index)
+                        }
+                        Err(TransactionError::WouldExceedMaxAccountCostLimit) => {
+                            error_counters.would_exceed_max_account_cost_limit += 1;
+                            Some(index)
+                        }
+                        Err(TransactionError::WouldExceedAccountDataBlockLimit) => {
+                            error_counters.would_exceed_account_data_block_limit += 1;
+                            Some(index)
+                        }
+                        Err(_) => None,
+                        Ok(_) => None,
+                }));
+            // 2. recordable_results + sanitized_tx => recorable_txs, retryable_indexes
+            let (recordable_transactions, recordable_transaction_indexes): (Vec<_>, Vec<_>) = processed_and_cost_tracker_results.iter().enumerate()
+                .zip(batch.sanitized_transactions()).filter_map(
+                |((index, result), tx)| {
+                    if result.was_processed() { Some((tx.to_versioned_transaction(), index)) } else {None} }).unzip();
+            {
+                let freeze_lock = bank.freeze_lock();
+                let record_results = self.transaction_recorder.record_transactions(bank.slot(), recordable_transactions);
+                if let Err(recorder_err) = record_results.result {
+                    retryable_transaction_indexes.extend(recordable_transaction_indexes);
+                    retryable_transaction_indexes.sort_unstable();
+                    return ExecuteAndCommitTransactionsOutput {
+                        transaction_counts,
+                        retryable_transaction_indexes,
+                        commit_transactions_result: Err(recorder_err),
+                        execute_and_commit_timings,
+                        error_counters,
+                        min_prioritization_fees,
+                        max_prioritization_fees,
+                    };
+                }
+                // 3. if record OK, then update cost-tracker, and commit to bank
+                self.consume_block_cu_limits(recordable_transaction_costs);
+
+                // or maybe committer can book CU during committing, which makes more sense
+                self.committer.commit_transactions(batch,
+                    processing_results,   ---> this needs to be those recorded txs
+                    starting_transaction_index,
+                    bank,
+                    balance_collector,
+                    &mut execute_and_commit_timings,
+                    &processed_counts,
+                )
+
+            }
+        }
+    }
+    // */
+
+    // Apply cost-tracking results to execution results:
+    // - transactions were not processed will be skipped, while
+    // - transactions were processed will be checked if can fit with block limits, if not its
+    //   processing_result will be changed to "WouldExceed...".
+    #[allow(dead_code)]
+    fn cost_tracking_executed_transactions(
+        process_results: Vec<TransactionProcessingResult>,
+        sanitized_transactions: &[impl TransactionWithMeta],
+        cost_tracker: &CostTracker,
+        feature_set: &agave_feature_set::FeatureSet,
+    ) -> Vec<TransactionProcessingResult> {
+        // TODO to accumulate this batch txs to block limits in a more efficient way
+        let mut local_cost_tracker = cost_tracker.clone();
+
+        process_results
+            .into_iter()
+            .zip(sanitized_transactions)
+            .map(|(process_result, tx)| match process_result {
+                Ok(ref processed_transaction) => {
+                    let actual_transaction_cost =
+                        CostModel::calculate_cost_for_executed_transaction(
+                            tx,
+                            processed_transaction.executed_units(),
+                            processed_transaction.loaded_accounts_data_size(),
+                            feature_set,
+                        );
+                    match local_cost_tracker.try_add(&actual_transaction_cost) {
+                        Ok(_) => process_result,
+                        Err(e) => Err(TransactionError::from(e)),
+                    }
+                }
+                Err(e) => Err(e),
+            })
+            .collect()
     }
 
     fn execute_and_commit_transactions_locked(
@@ -1836,5 +1997,209 @@ mod tests {
             .is_exited
             .store(true, Ordering::Relaxed);
         let _ = poh_simulator.join();
+    }
+
+    #[test]
+    fn test_cost_tracking_executed_transactions() {
+        use {
+            solana_fee_structure::FeeDetails,
+            solana_svm::{
+                account_loader::{FeesOnlyTransaction, LoadedTransaction},
+                rollback_accounts::RollbackAccounts,
+                transaction_execution_result::{ExecutedTransaction, TransactionExecutionDetails},
+                transaction_processing_result::ProcessedTransaction,
+            },
+            std::collections::HashMap,
+        };
+
+        let feature_set = agave_feature_set::FeatureSet::default();
+        let signer = Keypair::new();
+        let sanitized_transactions = sanitize_transactions(vec![
+            system_transaction::transfer(&signer, &Pubkey::new_unique(), 1, Hash::new_unique()),
+            system_transaction::transfer(&signer, &Pubkey::new_unique(), 1, Hash::new_unique()),
+            system_transaction::transfer(&signer, &Pubkey::new_unique(), 1, Hash::new_unique()),
+        ]);
+
+        // processed txs are all fit, noch to results, cost-tracker is readonly
+        {
+            let process_results: Vec<TransactionProcessingResult> = vec![
+                Ok(ProcessedTransaction::FeesOnly(Box::new(
+                    FeesOnlyTransaction {
+                        load_error: TransactionError::InvalidProgramForExecution,
+                        fee_details: FeeDetails::default(),
+                        rollback_accounts: RollbackAccounts::FeePayerOnly {
+                            fee_payer: (
+                                Pubkey::new_unique(),
+                                AccountSharedData::new(4242, 0, &Pubkey::new_unique()),
+                            ),
+                        },
+                    },
+                ))),
+                Err(TransactionError::AccountInUse),
+                Ok(ProcessedTransaction::Executed(Box::new(
+                    ExecutedTransaction {
+                        execution_details: TransactionExecutionDetails {
+                            executed_units: 350000,
+                            ..TransactionExecutionDetails::default()
+                        },
+                        loaded_transaction: LoadedTransaction {
+                            loaded_accounts_data_size: 1000000,
+                            ..LoadedTransaction::default()
+                        },
+                        programs_modified_by_tx: HashMap::new(),
+                    },
+                ))),
+            ];
+            let cost_tracker = CostTracker::default();
+
+            let result = Consumer::cost_tracking_executed_transactions(
+                process_results,
+                &sanitized_transactions,
+                &cost_tracker,
+                &feature_set,
+            );
+            assert_eq!(result.len(), 3);
+            assert!(result[0].was_processed());
+            assert!(!result[1].was_processed());
+            assert!(result[2].was_processed());
+        }
+
+        // first tx is too large
+        {
+            let process_results: Vec<TransactionProcessingResult> = vec![
+                Ok(ProcessedTransaction::Executed(Box::new(
+                    ExecutedTransaction {
+                        execution_details: TransactionExecutionDetails {
+                            executed_units: std::u64::MAX,
+                            ..TransactionExecutionDetails::default()
+                        },
+                        loaded_transaction: LoadedTransaction {
+                            loaded_accounts_data_size: std::u32::MAX,
+                            ..LoadedTransaction::default()
+                        },
+                        programs_modified_by_tx: HashMap::new(),
+                    },
+                ))),
+                Err(TransactionError::AccountInUse),
+                Ok(ProcessedTransaction::FeesOnly(Box::new(
+                    FeesOnlyTransaction {
+                        load_error: TransactionError::InvalidProgramForExecution,
+                        fee_details: FeeDetails::default(),
+                        rollback_accounts: RollbackAccounts::FeePayerOnly {
+                            fee_payer: (
+                                Pubkey::new_unique(),
+                                AccountSharedData::new(std::u64::MAX, 0, &Pubkey::new_unique()),
+                            ),
+                        },
+                    },
+                ))),
+            ];
+            let cost_tracker = CostTracker::default();
+
+            let result = Consumer::cost_tracking_executed_transactions(
+                process_results,
+                &sanitized_transactions,
+                &cost_tracker,
+                &feature_set,
+            );
+            assert_eq!(result.len(), 3);
+            assert!(!result[0].was_processed());
+            assert!(!result[1].was_processed());
+            assert!(result[2].was_processed());
+        }
+
+        // second tx is too large, but itself isnt large enough (testing accumulate)
+        {
+            let process_results: Vec<TransactionProcessingResult> = vec![
+                Ok(ProcessedTransaction::Executed(Box::new(
+                    ExecutedTransaction {
+                        execution_details: TransactionExecutionDetails {
+                            executed_units:
+                                solana_cost_model::block_cost_limits::MAX_WRITABLE_ACCOUNT_UNITS / 2,
+                            ..TransactionExecutionDetails::default()
+                        },
+                        loaded_transaction: LoadedTransaction {
+                            loaded_accounts_data_size: 0,
+                            ..LoadedTransaction::default()
+                        },
+                        programs_modified_by_tx: HashMap::new(),
+                    },
+                ))),
+                Err(TransactionError::AccountInUse),
+                Ok(ProcessedTransaction::Executed(Box::new(
+                    ExecutedTransaction {
+                        execution_details: TransactionExecutionDetails {
+                            executed_units:
+                                solana_cost_model::block_cost_limits::MAX_WRITABLE_ACCOUNT_UNITS / 2,
+                            ..TransactionExecutionDetails::default()
+                        },
+                        loaded_transaction: LoadedTransaction {
+                            loaded_accounts_data_size: 0,
+                            ..LoadedTransaction::default()
+                        },
+                        programs_modified_by_tx: HashMap::new(),
+                    },
+                ))),
+            ];
+            let cost_tracker = CostTracker::default();
+
+            let result = Consumer::cost_tracking_executed_transactions(
+                process_results,
+                &sanitized_transactions,
+                &cost_tracker,
+                &feature_set,
+            );
+            assert_eq!(result.len(), 3);
+            assert!(result[0].was_processed());
+            assert!(!result[1].was_processed());
+            assert!(!result[2].was_processed());
+        }
+
+        // both too large
+        {
+            let process_results: Vec<TransactionProcessingResult> = vec![
+                Ok(ProcessedTransaction::Executed(Box::new(
+                    ExecutedTransaction {
+                        execution_details: TransactionExecutionDetails {
+                            executed_units:
+                                solana_cost_model::block_cost_limits::MAX_WRITABLE_ACCOUNT_UNITS,
+                            ..TransactionExecutionDetails::default()
+                        },
+                        loaded_transaction: LoadedTransaction {
+                            loaded_accounts_data_size: 0,
+                            ..LoadedTransaction::default()
+                        },
+                        programs_modified_by_tx: HashMap::new(),
+                    },
+                ))),
+                Err(TransactionError::AccountInUse),
+                Ok(ProcessedTransaction::Executed(Box::new(
+                    ExecutedTransaction {
+                        execution_details: TransactionExecutionDetails {
+                            executed_units:
+                                solana_cost_model::block_cost_limits::MAX_WRITABLE_ACCOUNT_UNITS,
+                            ..TransactionExecutionDetails::default()
+                        },
+                        loaded_transaction: LoadedTransaction {
+                            loaded_accounts_data_size: 0,
+                            ..LoadedTransaction::default()
+                        },
+                        programs_modified_by_tx: HashMap::new(),
+                    },
+                ))),
+            ];
+            let cost_tracker = CostTracker::default();
+
+            let result = Consumer::cost_tracking_executed_transactions(
+                process_results,
+                &sanitized_transactions,
+                &cost_tracker,
+                &feature_set,
+            );
+            assert_eq!(result.len(), 3);
+            assert!(!result[0].was_processed());
+            assert!(!result[1].was_processed());
+            assert!(!result[2].was_processed());
+        }
     }
 }

@@ -57,8 +57,9 @@ pub struct UpdatedCosts {
     pub updated_costliest_account_cost: u64,
 }
 
+// TODO - remove Clone, look for cheaper ways to accumulate temp tracker
 #[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CostTracker {
     account_cost_limit: u64,
     block_cost_limit: u64,

@@ -3242,6 +3242,7 @@ impl ReplayStage {
                     .send(CostUpdate::FrozenBank {
                         bank: bank.clone_without_scheduler(),
                         is_leader_block,
+                        total_transaction_fee: bank.get_collected_transaction_fee(),
                     })
                     .unwrap_or_else(|err| {
                         warn!("cost_update_sender failed sending bank stats: {:?}", err)

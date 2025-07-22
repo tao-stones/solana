@@ -266,7 +266,7 @@ impl AddAssign for SquashTiming {
     }
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct CollectorFeeDetails {
     transaction_fee: u64,
     priority_fee: u64,
@@ -6916,8 +6916,8 @@ impl Bank {
     }
 
     /// Return total transaction fee collected
-    pub fn read_collector_fee_details(&self) -> LockResult<RwLockReadGuard<CollectorFeeDetails>> {
-        self.collector_fee_details.read()
+    pub fn get_collector_fee_details(&self) -> CollectorFeeDetails {
+        self.collector_fee_details.read().unwrap().clone()
     }
 }
 

@@ -814,7 +814,7 @@ mod test {
                 data: vec![1, 2, 3],
             }),
             compute_units_consumed: Some(1234u64),
-            cost_units: Some(5678),
+            transaction_cost: Some(5678),
         };
 
         let output = {
@@ -894,7 +894,7 @@ Rewards:
                 data: vec![1, 2, 3],
             }),
             compute_units_consumed: Some(2345u64),
-            cost_units: Some(5678),
+            transaction_cost: Some(5678),
         };
 
         let output = {

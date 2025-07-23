@@ -189,7 +189,7 @@ impl TransactionStatusService {
                         loaded_addresses,
                         return_data,
                         compute_units_consumed: Some(executed_units),
-                        cost_units: cost,
+                        transaction_cost: cost,
                     };
 
                     if let Some(transaction_notifier) = transaction_notifier.as_ref() {

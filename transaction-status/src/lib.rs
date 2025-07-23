@@ -186,7 +186,7 @@ fn build_simple_ui_transaction_status_meta(
         loaded_addresses: OptionSerializer::Skip,
         return_data: OptionSerializer::Skip,
         compute_units_consumed: OptionSerializer::Skip,
-        cost_units: OptionSerializer::Skip,
+        transaction_cost: OptionSerializer::Skip,
     }
 }
 
@@ -225,7 +225,7 @@ fn parse_ui_transaction_status_meta(
             meta.return_data.map(|return_data| return_data.into()),
         ),
         compute_units_consumed: OptionSerializer::or_skip(meta.compute_units_consumed),
-        cost_units: OptionSerializer::or_skip(meta.cost_units),
+        transaction_cost: OptionSerializer::or_skip(meta.transaction_cost),
     }
 }
 
@@ -901,7 +901,7 @@ mod test {
             },
             return_data: None,
             compute_units_consumed: None,
-            cost_units: None,
+            transaction_cost: None,
         };
         #[rustfmt::skip]
         let expected_json_output_value: serde_json::Value = serde_json::from_str(

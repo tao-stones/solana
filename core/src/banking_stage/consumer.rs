@@ -1824,7 +1824,7 @@ mod tests {
                 rewards: Some(vec![]),
                 loaded_addresses: sanitized_tx.get_loaded_addresses(),
                 compute_units_consumed: Some(0),
-                cost_units: Some(tx_cost.sum()),
+                transaction_cost: Some(tx_cost.sum()),
                 ..TransactionStatusMeta::default()
             }
         );

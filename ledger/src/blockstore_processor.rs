@@ -1976,6 +1976,28 @@ fn load_frozen_forks(
             m.stop();
             process_single_slot_us += m.as_us();
 
+            // report cost-tracker stats
+            {
+                info!("=== reporting cost tracker stats for bank {:?}", bank.slot());
+                let (total_transaction_fee, total_priority_fee) = {
+                    let collector_fee_details = bank.get_collector_fee_details();
+                    (
+                        collector_fee_details.total_transaction_fee(),
+                        collector_fee_details.total_priority_fee(),
+                    )
+                };
+
+                let cost_tracker = bank.read_cost_tracker().unwrap();
+                let slot = bank.slot();
+                let is_leader_block = false;
+                cost_tracker.report_stats(
+                    slot,
+                    is_leader_block,
+                    total_transaction_fee,
+                    total_priority_fee,
+                );
+            }
+
             let mut m = Measure::start("voting");
             // If we've reached the last known root in blockstore, start looking
             // for newer cluster confirmed roots

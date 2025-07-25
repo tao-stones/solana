@@ -614,6 +614,9 @@ fn setup_slot_recording(
             // for regualr replay ledger, report cost-tracker-stats after each
             // slot is confirmed.
             let slot_callback = Arc::new(move |bank: &Bank| {
+                // Block must be frozen by this point
+                assert!(bank.is_frozen());
+
                 let (total_transaction_fee, total_priority_fee) = {
                     let collector_fee_details = bank.get_collector_fee_details();
                     (

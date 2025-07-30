@@ -7,7 +7,9 @@ use {
     },
     itertools::Itertools,
     solana_clock::MAX_PROCESSING_AGE,
-    solana_cost_model::{cost_model::CostModel, cost_tracker::CostTracker, transaction_cost::TransactionCost},
+    solana_cost_model::{
+        cost_model::CostModel, cost_tracker::CostTracker, transaction_cost::TransactionCost,
+    },
     solana_fee::FeeFeatures,
     solana_fee_structure::FeeBudgetLimits,
     solana_measure::measure_us,
@@ -111,11 +113,22 @@ impl Consumer {
                 Err(err) => Err(err),
             })
             .collect();
-        let mut output = self.process_and_record_transactions_with_pre_results(
-            bank,
-            txs,
-            check_results.into_iter(),
-        );
+
+        // TAO experimenting flag
+        let reserve_and_refund = false;
+        let mut output = if reserve_and_refund {
+            self.process_and_record_transactions_with_pre_results(
+                bank,
+                txs,
+                check_results.into_iter(),
+            )
+        } else {
+            self.process_and_record_transactions_with_pre_results_no_reserve(
+                bank,
+                txs,
+                check_results.into_iter(),
+            )
+        };
 
         // Accumulate error counters from the initial checks into final results
         output
@@ -166,7 +179,6 @@ impl Consumer {
         txs: &[impl TransactionWithMeta],
         pre_results: impl Iterator<Item = Result<(), TransactionError>>,
     ) -> ProcessTransactionBatchOutput {
-        //* TAO - not to reserve requested CUs
         let (
             (transaction_qos_cost_results, cost_model_throttled_transactions_count),
             cost_model_us,
@@ -186,11 +198,6 @@ impl Consumer {
                 Err(err) => Err(err.clone()),
             })
         ));
-        // */
-        /* TODO - can do some filtering here to avoid executing heavy TXs that wouldn't fit afterwards
-        let (batch, lock_us) = measure_us!(bank.prepare_sanitized_batch_with_results(
-                txs, pre_results));
-        // */
 
         // retryable_txs includes AccountInUse, WouldExceedMaxBlockCostLimit
         // WouldExceedMaxAccountCostLimit, WouldExceedMaxVoteCostLimit
@@ -201,8 +208,6 @@ impl Consumer {
         // Once the accounts are new transactions can enter the pipeline to process them
         let (_, unlock_us) = measure_us!(drop(batch));
 
-        //* TAO - no need to adjust with actual results. transactions that were recorded and
-        //        committed are those can fit into block
         let ExecuteAndCommitTransactionsOutput {
             ref commit_transactions_result,
             ..
@@ -217,7 +222,6 @@ impl Consumer {
             commit_transactions_result.as_ref().ok(),
             bank,
         );
-        // */
         // reports qos service stats for this batch
         self.qos_service.report_metrics(bank.slot());
 
@@ -236,23 +240,67 @@ impl Consumer {
         }
     }
 
-    /*
+    // TAO try execute-then-track-cost approach
+    fn process_and_record_transactions_with_pre_results_no_reserve(
+        &self,
+        bank: &Arc<Bank>,
+        txs: &[impl TransactionWithMeta],
+        pre_results: impl Iterator<Item = Result<(), TransactionError>>,
+    ) -> ProcessTransactionBatchOutput {
+        let (batch, lock_us) =
+            measure_us!(bank.prepare_sanitized_batch_with_results(txs, pre_results));
+
+        // retryable_txs includes AccountInUse, WouldExceedMaxBlockCostLimit
+        // WouldExceedMaxAccountCostLimit, WouldExceedMaxVoteCostLimit
+        // and WouldExceedMaxAccountDataCostLimit
+        let execute_and_commit_transactions_output =
+            self.execute_and_commit_locked_transactions(bank, &batch);
+        // TAO TODO VVVVVV
+        let cost_model_throttled_transactions_count = 0;
+        let cost_model_us = 0;
+
+        // Once the accounts are new transactions can enter the pipeline to process them
+        let (_, unlock_us) = measure_us!(drop(batch));
+
+        // reports qos service stats for this batch
+        // TODO - skip this reporting?
+        self.qos_service.report_metrics(bank.slot());
+
+        debug!(
+            "bank: {} lock: {}us unlock: {}us txs_len: {}",
+            bank.slot(),
+            lock_us,
+            unlock_us,
+            txs.len(),
+        );
+
+        ProcessTransactionBatchOutput {
+            cost_model_throttled_transactions_count,
+            cost_model_us,
+            execute_and_commit_transactions_output,
+        }
+    }
+    //*
     fn execute_and_commit_locked_transactions(
         &self,
         bank: &Arc<Bank>,
-        batch: &TransactionBatch<impl TransactinoWithMeta>,
+        batch: &TransactionBatch<impl TransactionWithMeta>,
     ) -> ExecuteAndCommitTransactionsOutput {
         let mut execute_and_commit_timings = LeaderExecuteAndCommitTimings::default();
         let mut error_counters = TransactionErrorMetrics::default();
 
         // collecting retryables:
-        ley mut retryable_transaction_indexes: <Vec<_> = batch
-            .lock_results().iter().enumarate().filter_map(|(index, res)| match res {
+        let mut retryable_transaction_indexes: Vec<_> = batch
+            .lock_results()
+            .iter()
+            .enumerate()
+            .filter_map(|(index, res)| match res {
                 // retryable error from account locking
                 Err(TransactionError::AccountInUse) => Some(index),
                 Err(_) => None,
                 Ok(_) => None,
-            }).collect();
+            })
+            .collect();
 
         // load and execute locked transactions
         let (load_and_execute_transactions_output, load_execute_us) = measure_us!(bank
@@ -280,18 +328,33 @@ impl Consumer {
         } = load_and_execute_transactions_output;
 
         // lock cost tracker for CU accounting, record and commit
+        let commit_transaction_statuses: Option<_>;
         {
             // acquire cost_tracker lock
-            let (mut cost_tracker, acquire_cost_tracker_us) = measure_us!(bank.write_cost_tracker().unwrap());
+            let (mut cost_tracker, _acquire_cost_tracker_us) =
+                measure_us!(bank.write_cost_tracker().unwrap());
 
             // for each processed-tx, get its actual cost, check if would-fit. Yes ->
             // recordable-tx; No -> retryabletx-indexes
             //
             // 1. processing_result + cost_tracker.would_fit => recordable_results, retryable_indexes
-            let processed_and_cost_tracked_results = Self::cost_tracking_executed_transactions(processing_results, batch.sanitized_transactios(), cost_tracker, &bank.feature_set);
+            let (processed_and_cost_tracked_results, recordable_transaction_costs): (
+                Vec<_>,
+                Vec<_>,
+            ) = {
+                Self::cost_tracking_executed_transactions(
+                    processing_results,
+                    batch.sanitized_transactions(),
+                    &cost_tracker,
+                    &bank.feature_set,
+                )
+            };
 
-            retryable_transaction_indexes.extend(processed_and_cost_tracked_results.iter().enumerate().filter_map(
-                    |(index, result|) match result {
+            retryable_transaction_indexes.extend(
+                processed_and_cost_tracked_results
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, result)| match result {
                         Err(TransactionError::WouldExceedMaxBlockCostLimit) => {
                             error_counters.would_exceed_max_block_cost_limit += 1;
                             Some(index)
@@ -310,46 +373,84 @@ impl Consumer {
                         }
                         Err(_) => None,
                         Ok(_) => None,
-                }));
+                    }),
+            );
+
             // 2. recordable_results + sanitized_tx => recorable_txs, retryable_indexes
-            let (recordable_transactions, recordable_transaction_indexes): (Vec<_>, Vec<_>) = processed_and_cost_tracker_results.iter().enumerate()
-                .zip(batch.sanitized_transactions()).filter_map(
-                |((index, result), tx)| {
-                    if result.was_processed() { Some((tx.to_versioned_transaction(), index)) } else {None} }).unzip();
+            let (recordable_transactions, recordable_transaction_indexes): (Vec<_>, Vec<_>) =
+                processed_and_cost_tracked_results
+                    .iter()
+                    .enumerate()
+                    .zip(batch.sanitized_transactions())
+                    .filter_map(|((index, result), tx)| {
+                        if result.was_processed() {
+                            Some((tx.to_versioned_transaction(), index))
+                        } else {
+                            None
+                        }
+                    })
+                    .unzip();
             {
-                let freeze_lock = bank.freeze_lock();
-                let record_results = self.transaction_recorder.record_transactions(bank.slot(), recordable_transactions);
+                let _freeze_lock = bank.freeze_lock();
+                let record_results = self
+                    .transaction_recorder
+                    .record_transactions(bank.slot(), recordable_transactions);
                 if let Err(recorder_err) = record_results.result {
                     retryable_transaction_indexes.extend(recordable_transaction_indexes);
                     retryable_transaction_indexes.sort_unstable();
                     return ExecuteAndCommitTransactionsOutput {
-                        transaction_counts,
+                        transaction_counts: LeaderProcessedTransactionCounts::default(),
                         retryable_transaction_indexes,
                         commit_transactions_result: Err(recorder_err),
                         execute_and_commit_timings,
                         error_counters,
-                        min_prioritization_fees,
-                        max_prioritization_fees,
+                        min_prioritization_fees: 0,
+                        max_prioritization_fees: 0,
                     };
                 }
-                // 3. if record OK, then update cost-tracker, and commit to bank
-                self.consume_block_cu_limits(recordable_transaction_costs);
 
-                // or maybe committer can book CU during committing, which makes more sense
-                self.committer.commit_transactions(batch,
-                    processing_results,   ---> this needs to be those recorded txs
-                    starting_transaction_index,
+                // 3. if record OK, then update cost-tracker, and commit to bank
+                recordable_transaction_costs
+                    .iter()
+                    .filter_map(|maybe_tx_cost| maybe_tx_cost.as_ref())
+                    .for_each(|actual_tx_cost| {
+                        assert!(
+                            cost_tracker.try_add(actual_tx_cost).is_ok(),
+                            "recorded tx must fit within block limits, {:?}",
+                            actual_tx_cost
+                        )
+                    });
+
+                let (_commit_time_us, commit_status) = self.committer.commit_transactions(
+                    batch,
+                    processed_and_cost_tracked_results,
+                    record_results.starting_transaction_index,
                     bank,
                     balance_collector,
                     &mut execute_and_commit_timings,
                     &processed_counts,
-                )
+                );
+                commit_transaction_statuses = Some(commit_status);
 
+                // NOTE: freeze_lock dropped here
             }
+            // NOTE: cost_tracker write-lock dropped here
+        }
+
+        retryable_transaction_indexes.sort_unstable();
+        let commit_transaction_statuses = commit_transaction_statuses
+            .expect("successfully recorded transactions must have been committed");
+        ExecuteAndCommitTransactionsOutput {
+            transaction_counts: LeaderProcessedTransactionCounts::default(),
+            retryable_transaction_indexes,
+            commit_transactions_result: Ok(commit_transaction_statuses),
+            execute_and_commit_timings,
+            error_counters,
+            min_prioritization_fees: 0,
+            max_prioritization_fees: 0,
         }
     }
     // */
-
     // Apply cost-tracking results to execution results:
     // - transactions were not processed will be skipped, while
     // - transactions were processed will be checked if can fit with block limits, if not its
@@ -358,9 +459,12 @@ impl Consumer {
     fn cost_tracking_executed_transactions<'a>(
         process_results: Vec<TransactionProcessingResult>,
         sanitized_transactions: &'a [impl TransactionWithMeta],
-        cost_tracker: &'a CostTracker,
-        feature_set: &'a agave_feature_set::FeatureSet,
-    ) -> (Vec<TransactionProcessingResult>, Vec<Option<TransactionCost<'a, impl TransactionWithMeta>>>) {
+        cost_tracker: &CostTracker,
+        feature_set: &agave_feature_set::FeatureSet,
+    ) -> (
+        Vec<TransactionProcessingResult>,
+        Vec<Option<TransactionCost<'a, impl TransactionWithMeta>>>,
+    ) {
         // TODO to accumulate this batch txs to block limits in a more efficient way
         let mut local_cost_tracker = cost_tracker.clone();
 

@@ -7,7 +7,7 @@ use {
     },
     itertools::Itertools,
     solana_clock::MAX_PROCESSING_AGE,
-    solana_cost_model::{cost_model::CostModel, cost_tracker::CostTracker},
+    solana_cost_model::{cost_model::CostModel, cost_tracker::CostTracker, transaction_cost::TransactionCost},
     solana_fee::FeeFeatures,
     solana_fee_structure::FeeBudgetLimits,
     solana_measure::measure_us,
@@ -355,12 +355,12 @@ impl Consumer {
     // - transactions were processed will be checked if can fit with block limits, if not its
     //   processing_result will be changed to "WouldExceed...".
     #[allow(dead_code)]
-    fn cost_tracking_executed_transactions(
+    fn cost_tracking_executed_transactions<'a>(
         process_results: Vec<TransactionProcessingResult>,
-        sanitized_transactions: &[impl TransactionWithMeta],
-        cost_tracker: &CostTracker,
-        feature_set: &agave_feature_set::FeatureSet,
-    ) -> Vec<TransactionProcessingResult> {
+        sanitized_transactions: &'a [impl TransactionWithMeta],
+        cost_tracker: &'a CostTracker,
+        feature_set: &'a agave_feature_set::FeatureSet,
+    ) -> (Vec<TransactionProcessingResult>, Vec<Option<TransactionCost<'a, impl TransactionWithMeta>>>) {
         // TODO to accumulate this batch txs to block limits in a more efficient way
         let mut local_cost_tracker = cost_tracker.clone();
 
@@ -377,13 +377,13 @@ impl Consumer {
                             feature_set,
                         );
                     match local_cost_tracker.try_add(&actual_transaction_cost) {
-                        Ok(_) => process_result,
-                        Err(e) => Err(TransactionError::from(e)),
+                        Ok(_) => (process_result, Some(actual_transaction_cost)),
+                        Err(e) => (Err(TransactionError::from(e)), None),
                     }
                 }
-                Err(e) => Err(e),
+                Err(e) => (Err(e), None),
             })
-            .collect()
+            .unzip() //.collect()
     }
 
     fn execute_and_commit_transactions_locked(
@@ -2052,7 +2052,7 @@ mod tests {
             ];
             let cost_tracker = CostTracker::default();
 
-            let result = Consumer::cost_tracking_executed_transactions(
+            let (result, _) = Consumer::cost_tracking_executed_transactions(
                 process_results,
                 &sanitized_transactions,
                 &cost_tracker,
@@ -2096,7 +2096,7 @@ mod tests {
             ];
             let cost_tracker = CostTracker::default();
 
-            let result = Consumer::cost_tracking_executed_transactions(
+            let (result, _) = Consumer::cost_tracking_executed_transactions(
                 process_results,
                 &sanitized_transactions,
                 &cost_tracker,
@@ -2143,7 +2143,7 @@ mod tests {
             ];
             let cost_tracker = CostTracker::default();
 
-            let result = Consumer::cost_tracking_executed_transactions(
+            let (result, _) = Consumer::cost_tracking_executed_transactions(
                 process_results,
                 &sanitized_transactions,
                 &cost_tracker,
@@ -2190,7 +2190,7 @@ mod tests {
             ];
             let cost_tracker = CostTracker::default();
 
-            let result = Consumer::cost_tracking_executed_transactions(
+            let (result, _) = Consumer::cost_tracking_executed_transactions(
                 process_results,
                 &sanitized_transactions,
                 &cost_tracker,

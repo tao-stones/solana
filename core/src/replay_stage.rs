@@ -3240,6 +3240,7 @@ impl ReplayStage {
                 if bank.is_stateless() {
                     info!("===TAO bank.remove_unrooted_slots({:?}, {:?})", bank_slot, bank.bank_id());
                     bank.remove_unrooted_slots(&[(bank_slot, bank.bank_id())]);
+                    bank.clear_signature_count();
                 }
 
                 // Freeze the bank before sending to any auxiliary threads

@@ -5619,6 +5619,11 @@ impl Bank {
         self.is_stateless.store(value, Relaxed);
     }
 
+    pub fn clear_signature_count(&self) {
+        // set signature count to zero for stateless bank
+        self.signature_count.store(0, Relaxed);
+    }
+
     pub fn accounts_lt_hash(&self) -> AccountsLtHash {
         self.accounts_lt_hash.lock().unwrap().clone()
     }

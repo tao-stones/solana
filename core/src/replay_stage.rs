@@ -3264,6 +3264,7 @@ impl ReplayStage {
                     // distribute rents
                     //
                     // 3. no accounts change
+                    /* TAO need to keep basic accounts updated such as slot_history, features
                     {
                         let this_accounts_lt_hash = bank.accounts_lt_hash();
                         let parent_accounts_lt_hash = bank.parent().unwrap().accounts_lt_hash();
@@ -3276,6 +3277,7 @@ impl ReplayStage {
                             parent_accounts_lt_hash.0.checksum(),
                         );
                     }
+                    // */
                     // 4. Should also check this bank's cache_for_accounts_lt_hash? Does it have any significance beyond accounts_lt_hash?
                 }
 

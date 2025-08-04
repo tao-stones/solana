@@ -654,6 +654,8 @@ fn process_entries(
     let mut batches = vec![];
     let mut tick_hashes = vec![];
 
+    info!("====TAO start process_entries, count {}", entries.len());
+
     for ReplayEntry {
         entry,
         starting_index,
@@ -683,6 +685,7 @@ fn process_entries(
                         log_messages_bytes_limit,
                         prioritization_fee_cache,
                     );
+                    info!("===TAO {} process_entries at block bounary, process_batches result {:?}, registering {} ticks", bank.slot(), process_results, tick_hashes.len());
                     for hash in tick_hashes.drain(..) {
                         bank.register_tick(&hash);
                     }
@@ -695,7 +698,8 @@ fn process_entries(
                 if bank.is_stateless() {
                     info!("===TAO skipping processing {} transactions for stateless bank slot {}, id {}", transactions.len(), bank.slot(), bank.bank_id());
                 } else {
-                    queue_batches_with_lock_retry(
+                    let pre_batches_len = batches.len();
+                    let process_results = queue_batches_with_lock_retry(
                         bank,
                         starting_index,
                         transactions,
@@ -712,7 +716,16 @@ fn process_entries(
                                 prioritization_fee_cache,
                             )
                         },
-                    )?;
+                    );
+                    let post_batches_len = batches.len();
+                    info!("===TAO {} process_entries queueing batch result {:?}, pre_batches_len {}, post_batches_len {}, ticks {}",
+                        bank.slot(), process_results, pre_batches_len, post_batches_len, tick_hashes.len());
+                    if process_results.is_err() {
+                        for hash in tick_hashes.drain(..) {
+                            bank.register_tick(&hash);
+                        }
+                    }
+                    process_results?;
                 }
             }
         }
@@ -732,6 +745,7 @@ fn process_entries(
         log_messages_bytes_limit,
         prioritization_fee_cache,
     );
+    info!("===TAO {} process_entries final step, process_entries result {:?}, registering {} ticks", bank.slot(), process_results, tick_hashes.len());
     for hash in tick_hashes {
         bank.register_tick(&hash);
     }

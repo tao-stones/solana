@@ -1470,7 +1470,7 @@ impl ReplaySlotStats {
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct ConfirmationProgress {
     pub last_entry: Hash,
     pub tick_hash_count: u64,
@@ -1595,8 +1595,8 @@ fn confirm_slot_entries(
             num_txs
         })
         .sum::<usize>();
-    trace!(
-        "Fetched entries for slot {slot}, num_entries: {num_entries}, num_shreds: {num_shreds}, \
+    info!(
+        "====TAO Fetched entries for slot {slot}, num_entries: {num_entries}, num_shreds: {num_shreds}, \
          num_txs: {num_txs}, slot_full: {slot_full}",
     );
 
@@ -1729,14 +1729,18 @@ fn confirm_slot_entries(
         }
     }
 
-    process_result?;
-
     progress.num_shreds += num_shreds;
     progress.num_entries += num_entries;
     progress.num_txs += num_txs;
     if let Some(last_entry_hash) = last_entry_hash {
         progress.last_entry = last_entry_hash;
     }
+
+    info!("===TAO slot {slot} progress {:?}", progress);
+    
+    // TAO HACK - continue progress before error exiting to allow stateless continue w ticks
+    process_result?;
+
 
     Ok(())
 }

@@ -25,19 +25,19 @@ pub const INSTRUCTION_DATA_BYTES_COST: u64 = 140 /*bytes per us*/ / COMPUTE_UNIT
 /// accumulated by Transactions added to it; A transaction's compute units are
 /// calculated by cost_model, based on transaction's signatures, write locks,
 /// data size and built-in and SBF instructions.
-pub const MAX_BLOCK_UNITS: u64 = MAX_BLOCK_UNITS_SIMD_0207;
+pub const MAX_BLOCK_UNITS: u64 = if TEST_295 { MAX_BLOCK_UNITS_SIMD_0286 } else { MAX_BLOCK_UNITS_SIMD_0207 };
 pub const MAX_BLOCK_UNITS_SIMD_0207: u64 = 8_000_000;
 pub const MAX_BLOCK_UNITS_SIMD_0256: u64 = 60_000_000;
-pub const MAX_BLOCK_UNITS_SIMD_0286: u64 = 100_000_000;
+pub const MAX_BLOCK_UNITS_SIMD_0286: u64 = if TEST_295 { 80_000 } else { 100_000_000 };
 
 /// Number of compute units that a writable account in a block is allowed. The
 /// limit is to prevent too many transactions write to same account, therefore
 /// reduce block's parallelism.
-pub const MAX_WRITABLE_ACCOUNT_UNITS: u64 = 2_000_000;
+pub const MAX_WRITABLE_ACCOUNT_UNITS: u64 = if TEST_295 { MAX_BLOCK_UNITS / 4 } else { 2_000_000 };
 
 /// Number of compute units that a block can have for vote transactions,
 /// set to less than MAX_BLOCK_UNITS to leave room for non-vote transactions
-pub const MAX_VOTE_UNITS: u64 = 6_000_000;
+pub const MAX_VOTE_UNITS: u64 = if TEST_295 { MAX_BLOCK_UNITS / 4 * 3 } else { 6_000_000 };
 
 /// The maximum allowed size, in bytes, that accounts data can grow, per block.
 /// This can also be thought of as the maximum size of new allocations per block.
@@ -47,3 +47,8 @@ pub const MAX_BLOCK_ACCOUNTS_DATA_SIZE_DELTA: u64 = 100_000_000;
 pub const fn simd_0286_block_limits() -> u64 {
     MAX_BLOCK_UNITS_SIMD_0286
 }
+
+
+// TAO testing - flag to reduce block limits, and allow leader to pack larger-than-limits
+// blocks, to testing how cluster handle block cu overage
+pub const TEST_295: bool = true;

@@ -373,6 +373,12 @@ impl CostTracker {
         tx_cost: &TransactionCost<impl TransactionWithMeta>,
         adjustment: u64,
     ) -> u64 {
+        // TAO for test, book less CU to block, makes leader to make larger-then-limits
+        // block
+        let factor = if TEST_295 { 8 } else { 10 };
+        let adjustment = adjustment * factor / 10;
+        // */
+
         let mut costliest_account_cost = 0;
         for account_key in tx_cost.writable_accounts() {
             let account_cost = self

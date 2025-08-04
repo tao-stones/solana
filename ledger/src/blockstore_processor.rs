@@ -654,7 +654,7 @@ fn process_entries(
     let mut batches = vec![];
     let mut tick_hashes = vec![];
 
-    info!("====TAO start process_entries, count {}", entries.len());
+    info!("====TAO {} start process_entries, count {}", bank.slot(), entries.len());
 
     for ReplayEntry {
         entry,

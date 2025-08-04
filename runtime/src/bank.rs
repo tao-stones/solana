@@ -2505,12 +2505,12 @@ impl Bank {
             if !self.is_stateless() { 
                 // finish up any deferred changes to account state
                 self.distribute_transaction_fee_details();
-                // TAO NOTE - should stateless slot updates slot_history sysvar account?
-                // it is currently used for vote and fork choices
-                self.update_slot_history();
                 // TAO NOTE - not going to burn incinerator
                 self.run_incinerator();
             }
+            // TAO NOTE - stateless slot should update slot_history sysvar
+            // it is currently used for vote and fork choices.
+            self.update_slot_history();
 
             // freeze is a one-way trip, idempotent
             self.freeze_started.store(true, Relaxed);

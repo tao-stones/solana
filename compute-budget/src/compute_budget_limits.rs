@@ -52,6 +52,7 @@ impl ComputeBudgetLimits {
             },
             loaded_accounts_data_size_limit,
             fee_details,
+            chili_peppers: self.chili_peppers,
         }
     }
 

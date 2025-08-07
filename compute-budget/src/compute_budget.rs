@@ -250,12 +250,14 @@ impl ComputeBudget {
     pub fn get_compute_budget_and_limits(
         &self,
         loaded_accounts_data_size_limit: NonZeroU32,
+        chili_peppers: u64,
         fee_details: FeeDetails,
     ) -> SVMTransactionExecutionAndFeeBudgetLimits {
         SVMTransactionExecutionAndFeeBudgetLimits {
             budget: self.to_budget(),
             loaded_accounts_data_size_limit,
             fee_details,
+            chili_peppers,
         }
     }
 }

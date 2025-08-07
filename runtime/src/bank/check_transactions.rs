@@ -116,6 +116,7 @@ impl Bank {
                                 // over configured compute budget in Bank.
                                 compute_budget.get_compute_budget_and_limits(
                                     fee_budget.loaded_accounts_data_size_limit,
+                                    limit.chili_peppers,
                                     fee_details,
                                 )
                             } else {
@@ -157,6 +158,7 @@ impl Bank {
                 budget: v.budget,
                 loaded_accounts_data_size_limit: v.loaded_accounts_data_size_limit,
                 fee_details: FeeDetails::default(),
+                chili_peppers: v.chili_peppers,
             })
         } else {
             compute_budget_and_limits

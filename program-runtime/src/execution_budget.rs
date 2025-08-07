@@ -260,6 +260,7 @@ pub struct SVMTransactionExecutionAndFeeBudgetLimits {
     pub budget: SVMTransactionExecutionBudget,
     pub loaded_accounts_data_size_limit: NonZeroU32,
     pub fee_details: FeeDetails,
+    pub chili_peppers: u64,
 }
 
 #[cfg(feature = "dev-context-only-utils")]
@@ -269,6 +270,7 @@ impl Default for SVMTransactionExecutionAndFeeBudgetLimits {
             budget: SVMTransactionExecutionBudget::default(),
             loaded_accounts_data_size_limit: MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             fee_details: FeeDetails::default(),
+            chili_peppers: DEFAULT_CHILI_PEPPERS,
         }
     }
 }

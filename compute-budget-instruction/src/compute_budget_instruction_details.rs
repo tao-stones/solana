@@ -43,6 +43,7 @@ pub struct ComputeBudgetInstructionDetails {
     requested_compute_unit_price: Option<(u8, u64)>,
     requested_heap_size: Option<(u8, u32)>,
     requested_loaded_accounts_data_size_limit: Option<(u8, u32)>,
+    requested_chili_peppers: Option<(u8, u64)>,
     num_non_compute_budget_instructions: Saturating<u16>,
     // Additional builtin program counters
     num_non_migratable_builtin_instructions: Saturating<u16>,
@@ -144,11 +145,18 @@ impl ComputeBudgetInstructionDetails {
             }
             .min(MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES);
 
+        let chili_peppers = self
+            .requested_chili_peppers
+            .map_or(DEFAULT_CHILI_PEPPERS, |(_index, requested_chili_peppers)| {
+                requested_chili_peppers
+            });
+
         Ok(ComputeBudgetLimits {
             updated_heap_bytes,
             compute_unit_limit,
             compute_unit_price,
             loaded_accounts_bytes,
+            chili_peppers,
         })
     }
 
@@ -181,6 +189,16 @@ impl ComputeBudgetInstructionDetails {
                     return Err(duplicate_instruction_error);
                 }
                 self.requested_loaded_accounts_data_size_limit = Some((index, bytes));
+            }
+            // TODO: using `Unused` variant for now, update solana-sdk to introduce real ix
+            Ok(ComputeBudgetInstruction::Unused) => {
+                if self.requested_chili_peppers.is_some() {
+                    return Err(duplicate_instruction_error);
+                }
+                // NOTE: The majority of transactions only touch hot accounts; cold accounts are
+                // typically accessed only for new allocations. So if users are setting this value
+                // explicitly, let's assume they’ll set it to zero, until new ix is added to sdk.
+                self.requested_chili_peppers = Some((index, 0));
             }
             _ => return Err(invalid_instruction_data_error),
         }
@@ -489,6 +507,7 @@ mod test {
                 compute_unit_limit: MAX_COMPUTE_UNIT_LIMIT,
                 compute_unit_price: u64::MAX,
                 loaded_accounts_bytes: MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
+                ..ComputeBudgetLimits::default()
             })
         );
 
@@ -508,6 +527,7 @@ mod test {
                 compute_unit_limit: val,
                 compute_unit_price: val as u64,
                 loaded_accounts_bytes: NonZeroU32::new(val).unwrap(),
+                ..ComputeBudgetLimits::default()
             })
         );
     }

@@ -39,6 +39,10 @@ pub const MIN_HEAP_FRAME_BYTES: u32 = HEAP_LENGTH as u32;
 pub const MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES: NonZeroU32 =
     NonZeroU32::new(64 * 1024 * 1024).unwrap();
 
+/// NOTE: default chili peppers, initially set to allow p95 txs not fail; it will
+/// be reduce later
+pub const DEFAULT_CHILI_PEPPERS: u64 = 95_000_000; //-- this is random
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SVMTransactionExecutionBudget {
     /// Number of compute units that a transaction or individual instruction is

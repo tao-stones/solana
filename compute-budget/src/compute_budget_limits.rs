@@ -1,5 +1,5 @@
 pub use solana_program_runtime::execution_budget::{
-    DEFAULT_HEAP_COST, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
+    DEFAULT_CHILI_PEPPERS, DEFAULT_HEAP_COST, DEFAULT_INSTRUCTION_COMPUTE_UNIT_LIMIT,
     MAX_BUILTIN_ALLOCATION_COMPUTE_UNIT_LIMIT, MAX_COMPUTE_UNIT_LIMIT, MAX_HEAP_FRAME_BYTES,
     MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES, MIN_HEAP_FRAME_BYTES,
 };
@@ -22,6 +22,7 @@ pub struct ComputeBudgetLimits {
     pub compute_unit_limit: u32,
     pub compute_unit_price: u64,
     pub loaded_accounts_bytes: NonZeroU32,
+    pub chili_peppers: u64,
 }
 
 impl Default for ComputeBudgetLimits {
@@ -31,6 +32,7 @@ impl Default for ComputeBudgetLimits {
             compute_unit_limit: MAX_COMPUTE_UNIT_LIMIT,
             compute_unit_price: 0,
             loaded_accounts_bytes: MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
+            chili_peppers: DEFAULT_CHILI_PEPPERS,
         }
     }
 }

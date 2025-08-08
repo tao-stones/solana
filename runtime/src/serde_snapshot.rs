@@ -144,6 +144,7 @@ struct DeserializableVersionedBank {
     unused_accounts: UnusedAccounts,
     unused_epoch_stakes: HashMap<Epoch, ()>,
     is_delta: bool,
+    chili_peppers: u64,
 }
 
 impl From<DeserializableVersionedBank> for BankFieldsToDeserialize {
@@ -183,6 +184,7 @@ impl From<DeserializableVersionedBank> for BankFieldsToDeserialize {
             versioned_epoch_stakes: HashMap::default(), // populated from ExtraFieldsToDeserialize
             accounts_lt_hash: AccountsLtHash(LT_HASH_CANARY), // populated from ExtraFieldsToDeserialize
             bank_hash_stats: BankHashStats::default(),        // populated from AccountsDbFields
+            chili_peppers: dvb.chili_peppers,
         }
     }
 }
@@ -224,6 +226,7 @@ struct SerializableVersionedBank {
     unused_accounts: UnusedAccounts,
     unused_epoch_stakes: HashMap<Epoch, ()>,
     is_delta: bool,
+    chili_peppers: u64,
 }
 
 impl From<BankFieldsToSerialize> for SerializableVersionedBank {
@@ -261,6 +264,7 @@ impl From<BankFieldsToSerialize> for SerializableVersionedBank {
             unused_accounts: UnusedAccounts::default(),
             unused_epoch_stakes: HashMap::default(),
             is_delta: rhs.is_delta,
+            chili_peppers: rhs.chili_peppers,
         }
     }
 }

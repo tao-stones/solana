@@ -166,7 +166,7 @@ use {
         slice,
         sync::{
             atomic::{
-                AtomicBool, AtomicI64, AtomicU64,
+                AtomicBool, AtomicI64, AtomicU32, AtomicU64,
                 Ordering::{self, AcqRel, Acquire, Relaxed},
             },
             Arc, LockResult, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard, Weak,
@@ -433,6 +433,7 @@ pub struct BankFieldsToDeserialize {
     pub(crate) accounts_data_len: u64,
     pub(crate) accounts_lt_hash: AccountsLtHash,
     pub(crate) bank_hash_stats: BankHashStats,
+    pub(crate) chili_peppers: u64,
 }
 
 /// Bank's common fields shared by all supported snapshot versions for serialization.
@@ -475,6 +476,7 @@ pub struct BankFieldsToSerialize {
     pub accounts_data_len: u64,
     pub versioned_epoch_stakes: HashMap<u64, VersionedEpochStakes>,
     pub accounts_lt_hash: AccountsLtHash,
+    pub chili_peppers: u64,
 }
 
 // Can't derive PartialEq because RwLock doesn't implement PartialEq
@@ -553,6 +555,8 @@ impl PartialEq for Bank {
             block_id,
             bank_hash_stats: _,
             epoch_rewards_calculation_cache: _,
+            chili_peppers: _,
+            chili_peppers_accumulator: _,
             // Ignore new fields explicitly if they do not impact PartialEq.
             // Adding ".." will remove compile-time checks that if a new field
             // is added to the struct, this PartialEq is accordingly updated.
@@ -630,6 +634,7 @@ impl BankFieldsToSerialize {
             accounts_data_len: u64::default(),
             versioned_epoch_stakes: HashMap::default(),
             accounts_lt_hash: AccountsLtHash(LtHash([0x7E57; LtHash::NUM_ELEMENTS])),
+            chili_peppers: u64::default(),
         }
     }
 }
@@ -903,6 +908,13 @@ pub struct Bank {
     /// This is used to avoid recalculating the same epoch rewards at epoch boundary.
     /// The hashmap is keyed by parent_hash.
     epoch_rewards_calculation_cache: Arc<Mutex<HashMap<Hash, Arc<PartitionedRewardsCalculation>>>>,
+
+    /// The initial chili peppers inherited from parent bank at start of bank, before any
+    /// transaction is processed. It should be used to check if a state is hot/cold
+    chili_peppers: u64,
+    /// accumulated chili peppers in this bank from processed transactions. It is added to
+    /// self.chili_peppers to pass down to child bank to ensure monotonically increase chili meter
+    chili_peppers_accumulator: AtomicU32,
 }
 
 #[derive(Debug)]
@@ -1100,12 +1112,18 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::default(),
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
+            chili_peppers: 0,
+            chili_peppers_accumulator: AtomicU32::new(0),
         };
 
         bank.transaction_processor =
             TransactionBatchProcessor::new_uninitialized(bank.slot, bank.epoch);
 
         bank.accounts_data_size_initial = bank.calculate_accounts_data_size().unwrap();
+
+        // In the case of bank is created from accounts, set initial chili peppers to total
+        // accounts data len
+        bank.chili_peppers = bank.accounts_data_size_initial;
 
         bank
     }
@@ -1353,6 +1371,8 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::default(),
             epoch_rewards_calculation_cache: parent.epoch_rewards_calculation_cache.clone(),
+            chili_peppers: parent.chili_peppers(),
+            chili_peppers_accumulator: AtomicU32::new(0),
         };
 
         let (_, ancestors_time_us) = measure_us!({
@@ -1813,6 +1833,8 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::new(&fields.bank_hash_stats),
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
+            chili_peppers: fields.chili_peppers,
+            chili_peppers_accumulator: AtomicU32::new(0),
         };
 
         bank.transaction_processor =
@@ -1920,6 +1942,7 @@ impl Bank {
             accounts_data_len: self.load_accounts_data_size(),
             versioned_epoch_stakes: self.epoch_stakes.clone(),
             accounts_lt_hash: self.accounts_lt_hash.lock().unwrap().clone(),
+            chili_peppers: self.chili_peppers(),
         }
     }
 
@@ -2611,6 +2634,9 @@ impl Bank {
             self.store_account(pubkey, &account.to_account_shared_data());
             self.accounts_data_size_initial += account.data().len() as u64;
         }
+
+        // setting initial chili peppers to total accounts data size len
+        self.chili_peppers = self.accounts_data_size_initial;
 
         // After storing genesis accounts, the bank stakes cache will be warmed
         // up and can be used to set the collector id to the highest staked
@@ -3638,6 +3664,14 @@ impl Bank {
             })
             .sum();
         self.update_accounts_data_size_delta_on_chain(accounts_data_len_delta);
+
+        // accumulates loaded accounts bytes
+        let loaded_accounts_data_size = processing_results
+            .iter()
+            .filter_map(|processing_result| processing_result.processed_transaction())
+            .map(|processed_tx| processed_tx.loaded_accounts_data_size())
+            .sum();
+        self.increment_chili_peppers_accumulator(loaded_accounts_data_size);
 
         let ((), update_transaction_statuses_us) =
             measure_us!(self.update_transaction_statuses(sanitized_txs, &processing_results));
@@ -5628,6 +5662,17 @@ impl Bank {
     /// Return total transaction fee collected
     pub fn get_collector_fee_details(&self) -> CollectorFeeDetails {
         self.collector_fee_details.read().unwrap().clone()
+    }
+
+    /// chili peppers
+    pub fn chili_peppers(&self) -> u64 {
+        self.chili_peppers
+            .saturating_add(self.chili_peppers_accumulator.load(Relaxed) as u64)
+    }
+
+    fn increment_chili_peppers_accumulator(&self, loaded_bytes: u32) {
+        self.chili_peppers_accumulator
+            .fetch_add(loaded_bytes, Relaxed);
     }
 }
 

@@ -42,6 +42,7 @@ qualifier_attr = { workspace = true, optional = true }
 serde = { workspace = true, features = ["rc"] }
 serde_derive = { workspace = true }
 solana-account = { workspace = true }
+solana-accounts-db = { workspace = true }
 solana-clock = { workspace = true }
 solana-fee-structure = { workspace = true }
 solana-frozen-abi = { workspace = true, optional = true, features = [

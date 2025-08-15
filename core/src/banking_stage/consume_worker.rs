@@ -355,6 +355,7 @@ impl ConsumeWorkerMetrics {
             would_exceed_account_data_block_limit,
             max_loaded_accounts_data_size_exceeded,
             program_execution_temporarily_restricted,
+            max_chili_peppers_exceeded: _,
         }: &TransactionErrorMetrics,
     ) {
         self.error_metrics

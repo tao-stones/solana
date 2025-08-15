@@ -137,6 +137,10 @@ pub struct TransactionProcessingEnvironment {
     pub feature_set: SVMFeatureSet,
     /// Rent calculator to use for the transaction batch.
     pub rent: Rent,
+    /// recent chili pepper threshold used to check account's hot/cold
+    /// its value = (bank.initial_chili_peppers - CACHE_LIMIT), so
+    /// account has chili greater or equal to this watermark is hot.
+    pub chili_peppers_watermark: u64,
 }
 
 #[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
@@ -402,11 +406,14 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                     Self::validate_transaction_nonce_and_fee_payer(
                         &mut account_loader,
                         tx,
-                        tx_details,
+                        tx_details, // TAO NOTE - this already has
+                                    // SVMTransactionExecutionAndFeeBudgetLimits, so the
+                                    // chili-peppers-limits
                         &environment.blockhash,
                         &environment.rent,
                         &mut error_metrics,
-                    )
+                    ) // TAO NOTE: the validate...() also checks if CB-limits is valid, in that
+                      // sense, it is OK to stuff CP-limits to ValidatedTransactinoDetails.
                 }));
             execute_timings
                 .saturating_add_in_place(ExecuteTimingType::ValidateFeesUs, validate_fees_us);
@@ -417,6 +424,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
                 validate_result,
                 &mut error_metrics,
                 &environment.rent,
+                environment.chili_peppers_watermark,
             ));
             load_us = load_us.saturating_add(single_load_us);
 
@@ -639,6 +647,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             loaded_accounts_bytes_limit: compute_budget_and_limits.loaded_accounts_data_size_limit,
             compute_budget: compute_budget_and_limits.budget,
             loaded_fee_payer_account: loaded_fee_payer,
+            chili_peppers_limit: 0, // TODO replace with compute_budget_and_limits.chili_peppers,
         })
     }
 
@@ -2023,7 +2032,9 @@ mod tests {
                 loaded_fee_payer_account: LoadedTransactionAccount {
                     loaded_size: base_account_size + fee_payer_account.data().len(),
                     account: post_validation_fee_payer_account,
+                    ..LoadedTransactionAccount::default()
                 },
+                ..ValidatedTransactionDetails::default()
             })
         );
     }
@@ -2101,7 +2112,9 @@ mod tests {
                 loaded_fee_payer_account: LoadedTransactionAccount {
                     loaded_size: base_account_size + fee_payer_account.data().len(),
                     account: post_validation_fee_payer_account,
-                }
+                    ..LoadedTransactionAccount::default()
+                },
+                ..ValidatedTransactionDetails::default()
             })
         );
     }
@@ -2382,7 +2395,9 @@ mod tests {
                     loaded_fee_payer_account: LoadedTransactionAccount {
                         loaded_size: base_account_size + fee_payer_account.data().len(),
                         account: post_validation_fee_payer_account,
-                    }
+                        ..LoadedTransactionAccount::default()
+                    },
+                    ..ValidatedTransactionDetails::default()
                 })
             );
         }

@@ -14,6 +14,7 @@ use {
         state_traits::StateMut, Account, AccountSharedData, ReadableAccount, WritableAccount,
         PROGRAM_OWNERS,
     },
+    solana_accounts_db::account_chili_peppers::AccountChiliPeppers,
     solana_clock::Slot,
     solana_fee_structure::FeeDetails,
     solana_instruction::{BorrowedAccountMeta, BorrowedInstruction},
@@ -106,6 +107,7 @@ pub(crate) struct ValidatedTransactionDetails {
     pub(crate) loaded_accounts_bytes_limit: NonZeroU32,
     pub(crate) fee_details: FeeDetails,
     pub(crate) loaded_fee_payer_account: LoadedTransactionAccount,
+    pub(crate) chili_peppers_limit: u64, // tx requested chili-peppers limit
 }
 
 #[cfg(feature = "dev-context-only-utils")]
@@ -118,6 +120,7 @@ impl Default for ValidatedTransactionDetails {
                 solana_program_runtime::execution_budget::MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             fee_details: FeeDetails::default(),
             loaded_fee_payer_account: LoadedTransactionAccount::default(),
+            chili_peppers_limit: u64::MAX, // TODO - replace with solana_program_runtime::execution_budget::DEFAULT_CHILI_PEPPERS
         }
     }
 }
@@ -127,6 +130,7 @@ impl Default for ValidatedTransactionDetails {
 pub(crate) struct LoadedTransactionAccount {
     pub(crate) account: AccountSharedData,
     pub(crate) loaded_size: usize,
+    pub(crate) chili_peppers: u64,
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -227,6 +231,7 @@ impl<'a, CB: TransactionProcessingCallback> AccountLoader<'a, CB> {
 
         account.map(|account| LoadedTransactionAccount {
             loaded_size: base_account_size.saturating_add(account.data().len()),
+            chili_peppers: account.read_chili_peppers(account_key),
             account,
         })
     }
@@ -412,6 +417,7 @@ pub(crate) fn load_transaction<CB: TransactionProcessingCallback>(
     validation_result: TransactionValidationResult,
     error_metrics: &mut TransactionErrorMetrics,
     rent: &Rent,
+    chili_peppers_watermark: u64,
 ) -> TransactionLoadResult {
     match validation_result {
         Err(e) => TransactionLoadResult::NotLoaded(e),
@@ -423,6 +429,8 @@ pub(crate) fn load_transaction<CB: TransactionProcessingCallback>(
                 tx_details.loaded_accounts_bytes_limit,
                 error_metrics,
                 rent,
+                tx_details.chili_peppers_limit,
+                chili_peppers_watermark,
             );
 
             match load_result {
@@ -433,6 +441,8 @@ pub(crate) fn load_transaction<CB: TransactionProcessingCallback>(
                     rollback_accounts: tx_details.rollback_accounts,
                     compute_budget: tx_details.compute_budget,
                     loaded_accounts_data_size: loaded_tx_accounts.loaded_accounts_data_size,
+                    // TODO - is there usecase for return consumed-chili-peppers back? Packer uses
+                    //        requested chili-peppers only, maybe rpc/sim can use it?
                 }),
                 Err(err) => TransactionLoadResult::FeesOnly(FeesOnlyTransaction {
                     load_error: err,
@@ -449,6 +459,7 @@ struct LoadedTransactionAccounts {
     pub(crate) accounts: Vec<TransactionAccount>,
     pub(crate) program_indices: Vec<IndexOfAccount>,
     pub(crate) loaded_accounts_data_size: u32,
+    pub(crate) consumed_chili_peppers: u64,
 }
 
 impl LoadedTransactionAccounts {
@@ -474,6 +485,31 @@ impl LoadedTransactionAccounts {
             Ok(())
         }
     }
+
+    #[allow(dead_code)]
+    fn consume_chili_peppers(
+        &mut self,
+        loaded_data_size: usize,
+        account_chili_peppers: u64,
+        requested_chili_peppers_limit: u64,
+        chili_pepper_watermark: u64, // = bank.chili_peppers - CACHE_LIMIT; from enviroment
+        error_metrics: &mut TransactionErrorMetrics,
+    ) -> Result<()> {
+        let is_account_hot = account_chili_peppers >= chili_pepper_watermark;
+        if is_account_hot {
+            // all good, do nothing
+            Ok(())
+        } else {
+            self.consumed_chili_peppers = self.consumed_chili_peppers.saturating_add(loaded_data_size as u64);
+            if self.consumed_chili_peppers > requested_chili_peppers_limit {
+                error_metrics.max_chili_peppers_exceeded += 1;
+                // TODO - add correct TransactionError to sdk, use it here.
+                Err(TransactionError::MaxLoadedAccountsDataSizeExceeded)
+            } else {
+                Ok(())
+            }
+        }
+    }
 }
 
 fn load_transaction_accounts<CB: TransactionProcessingCallback>(
@@ -483,6 +519,8 @@ fn load_transaction_accounts<CB: TransactionProcessingCallback>(
     loaded_accounts_bytes_limit: NonZeroU32,
     error_metrics: &mut TransactionErrorMetrics,
     rent: &Rent,
+    requested_chili_peppers_limit: u64,
+    chili_pepper_watermark: u64,
 ) -> Result<LoadedTransactionAccounts> {
     if account_loader
         .feature_set
@@ -495,8 +533,11 @@ fn load_transaction_accounts<CB: TransactionProcessingCallback>(
             loaded_accounts_bytes_limit,
             error_metrics,
             rent,
+            requested_chili_peppers_limit,
+            chili_pepper_watermark,
         )
     } else {
+        // TAO NOTE - need to do chili-peppers for _old as well?
         load_transaction_accounts_old(
             account_loader,
             message,
@@ -515,6 +556,8 @@ fn load_transaction_accounts_simd186<CB: TransactionProcessingCallback>(
     loaded_accounts_bytes_limit: NonZeroU32,
     error_metrics: &mut TransactionErrorMetrics,
     rent: &Rent,
+    requested_chili_peppers_limit: u64,
+    chili_pepper_watermark: u64,
 ) -> Result<LoadedTransactionAccounts> {
     let account_keys = message.account_keys();
     let mut additional_loaded_accounts: AHashSet<Pubkey> = AHashSet::new();
@@ -523,6 +566,7 @@ fn load_transaction_accounts_simd186<CB: TransactionProcessingCallback>(
         accounts: Vec::with_capacity(account_keys.len()),
         program_indices: Vec::with_capacity(message.num_instructions()),
         loaded_accounts_data_size: 0,
+        consumed_chili_peppers: 0,
     };
 
     // Transactions pay a base fee per address lookup table.
@@ -534,16 +578,26 @@ fn load_transaction_accounts_simd186<CB: TransactionProcessingCallback>(
         error_metrics,
     )?;
 
+    // NOTE - ALT accounts' chili-peppers will be checked when they are loaded later
+
     let mut collect_loaded_account =
         |account_loader: &mut AccountLoader<CB>, key: &Pubkey, loaded_account| -> Result<()> {
             let LoadedTransactionAccount {
                 account,
                 loaded_size,
+                chili_peppers,
             } = loaded_account;
 
             loaded_transaction_accounts.increase_calculated_data_size(
                 loaded_size,
                 loaded_accounts_bytes_limit,
+                error_metrics,
+            )?;
+            loaded_transaction_accounts.consume_chili_peppers(
+                loaded_size,
+                chili_peppers,
+                requested_chili_peppers_limit,
+                chili_pepper_watermark,
                 error_metrics,
             )?;
 
@@ -571,13 +625,24 @@ fn load_transaction_accounts_simd186<CB: TransactionProcessingCallback>(
                         if let Some(programdata_account) =
                             account_loader.load_account(&programdata_address)
                         {
+                            let loaded_size = TRANSACTION_ACCOUNT_BASE_SIZE
+                                    .saturating_add(programdata_account.data().len());
                             // ...count programdata toward this transaction's total size.
                             loaded_transaction_accounts.increase_calculated_data_size(
-                                TRANSACTION_ACCOUNT_BASE_SIZE
-                                    .saturating_add(programdata_account.data().len()),
+                                loaded_size,
                                 loaded_accounts_bytes_limit,
                                 error_metrics,
                             )?;
+
+                            // check loaded programdata account chili-peppers
+                            loaded_transaction_accounts.consume_chili_peppers(
+                                loaded_size,
+                                programdata_account.read_chili_peppers(&programdata_address),
+                                requested_chili_peppers_limit,
+                                chili_pepper_watermark,
+                                error_metrics,
+                            )?;
+                           
                             additional_loaded_accounts.insert(programdata_address);
                         }
                     }
@@ -610,6 +675,10 @@ fn load_transaction_accounts_simd186<CB: TransactionProcessingCallback>(
             return Err(TransactionError::ProgramAccountNotFound);
         };
 
+        // NOTE: Loading Program Account should still subject to chili peppers limit,
+        // since Program account itself is small enough, it may not make difference
+        // when checking against limit. Leave it's CP unchecked for now.
+
         let owner_id = program_account.owner();
         if !native_loader::check_id(owner_id) && !PROGRAM_OWNERS.contains(owner_id) {
             error_metrics.invalid_program_for_execution += 1;
@@ -641,6 +710,7 @@ fn load_transaction_accounts_old<CB: TransactionProcessingCallback>(
         let LoadedTransactionAccount {
             account,
             loaded_size,
+            chili_peppers: _,
         } = loaded_account;
 
         accumulate_and_check_loaded_account_data_size(
@@ -712,6 +782,8 @@ fn load_transaction_accounts_old<CB: TransactionProcessingCallback>(
         accounts,
         program_indices,
         loaded_accounts_data_size: accumulated_accounts_data_size.0,
+        consumed_chili_peppers: 0, // TODO - not implemented for "_old", assume it'd be removed
+                                   // soon.
     })
 }
 
@@ -729,6 +801,7 @@ fn load_transaction_account<CB: TransactionProcessingCallback>(
         LoadedTransactionAccount {
             loaded_size: 0,
             account: construct_instructions_account(message),
+            chili_peppers: u64::MAX,
         }
     } else if let Some(mut loaded_account) =
         account_loader.load_transaction_account(account_key, is_writable)
@@ -743,6 +816,7 @@ fn load_transaction_account<CB: TransactionProcessingCallback>(
         LoadedTransactionAccount {
             loaded_size: default_account.data().len(),
             account: default_account,
+            chili_peppers: 0, // cold account
         }
     };
 
@@ -918,6 +992,8 @@ mod tests {
         };
         let mut account_loader: AccountLoader<TestCallbacks> = (&callbacks).into();
         account_loader.feature_set = &feature_set;
+        // All accounts are hot
+        let chili_peppers_watermark = u64::MAX;
         load_transaction(
             &mut account_loader,
             &sanitized_tx,
@@ -930,6 +1006,7 @@ mod tests {
             }),
             error_metrics,
             rent,
+            chili_peppers_watermark,
         )
     }
 
@@ -1242,12 +1319,15 @@ mod tests {
             &feature_set,
             0,
         );
+        // All accounts are hot
+        let chili_peppers_watermark = u64::MAX;
         load_transaction(
             &mut account_loader,
             &tx,
             Ok(ValidatedTransactionDetails::default()),
             &mut error_metrics,
             &Rent::default(),
+            chili_peppers_watermark,
         )
     }
 
@@ -1530,10 +1610,12 @@ mod tests {
             LoadedTransactionAccount {
                 loaded_size: fee_payer_account.data().len(),
                 account: fee_payer_account.clone(),
+                ..LoadedTransactionAccount::default()
             },
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
         assert_eq!(
             result.unwrap(),
@@ -1541,6 +1623,7 @@ mod tests {
                 accounts: vec![(fee_payer_address, fee_payer_account)],
                 program_indices: vec![],
                 loaded_accounts_data_size: 0,
+                consumed_chili_peppers: 0,
             }
         );
     }
@@ -1594,10 +1677,12 @@ mod tests {
             LoadedTransactionAccount {
                 account: fee_payer_account.clone(),
                 loaded_size: base_account_size,
+                ..LoadedTransactionAccount::default()
             },
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         if formalize_loaded_transaction_data_size {
@@ -1619,6 +1704,7 @@ mod tests {
                     ],
                     program_indices: vec![u16::MAX],
                     loaded_accounts_data_size,
+                    consumed_chili_peppers: 0,
                 }
             );
         }
@@ -1661,6 +1747,7 @@ mod tests {
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         assert_eq!(result.err(), Some(TransactionError::ProgramAccountNotFound));
@@ -1703,6 +1790,7 @@ mod tests {
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         assert_eq!(
@@ -1767,10 +1855,12 @@ mod tests {
             LoadedTransactionAccount {
                 account: fee_payer_account.clone(),
                 loaded_size: base_account_size,
+                ..LoadedTransactionAccount::default()
             },
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         let loaded_accounts_data_size = base_account_size as u32 * 2;
@@ -1787,6 +1877,7 @@ mod tests {
                 ],
                 program_indices: vec![1],
                 loaded_accounts_data_size,
+                consumed_chili_peppers: 0,
             }
         );
     }
@@ -1832,6 +1923,7 @@ mod tests {
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         assert_eq!(result.err(), Some(TransactionError::ProgramAccountNotFound));
@@ -1884,6 +1976,7 @@ mod tests {
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         assert_eq!(
@@ -1956,10 +2049,12 @@ mod tests {
             LoadedTransactionAccount {
                 account: fee_payer_account.clone(),
                 loaded_size: base_account_size,
+                ..LoadedTransactionAccount::default()
             },
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         let loaded_accounts_data_size = base_account_size as u32 * 2;
@@ -1976,6 +2071,7 @@ mod tests {
                 ],
                 program_indices: vec![1],
                 loaded_accounts_data_size,
+                consumed_chili_peppers: 0,
             }
         );
     }
@@ -2052,10 +2148,12 @@ mod tests {
             LoadedTransactionAccount {
                 account: fee_payer_account.clone(),
                 loaded_size: base_account_size,
+                ..LoadedTransactionAccount::default()
             },
             MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             &mut error_metrics,
             &Rent::default(),
+            0, u64::MAX, // eg. all accounts are hot
         );
 
         let loaded_accounts_data_size = base_account_size as u32 * 2;
@@ -2075,6 +2173,7 @@ mod tests {
                 ],
                 program_indices: vec![1, 1],
                 loaded_accounts_data_size,
+                consumed_chili_peppers: 0,
             }
         );
     }
@@ -2109,12 +2208,15 @@ mod tests {
         let num_accounts = tx.message().account_keys.len();
         let sanitized_tx = SanitizedTransaction::from_transaction_for_tests(tx);
         let mut error_metrics = TransactionErrorMetrics::default();
+        // All accounts are hot
+        let chili_peppers_watermark = u64::MAX;
         let load_result = load_transaction(
             &mut account_loader,
             &sanitized_tx.clone(),
             Ok(ValidatedTransactionDetails::default()),
             &mut error_metrics,
             &Rent::default(),
+            chili_peppers_watermark,
         );
 
         let TransactionLoadResult::Loaded(loaded_transaction) = load_result else {
@@ -2208,9 +2310,13 @@ mod tests {
             loaded_fee_payer_account: LoadedTransactionAccount {
                 account: fee_payer_account,
                 loaded_size: base_account_size,
+                ..LoadedTransactionAccount::default()
             },
             ..ValidatedTransactionDetails::default()
         });
+
+        // All accounts are hot
+        let chili_peppers_watermark = u64::MAX;
 
         let load_result = load_transaction(
             &mut account_loader,
@@ -2218,6 +2324,7 @@ mod tests {
             validation_result,
             &mut error_metrics,
             &Rent::default(),
+            chili_peppers_watermark,
         );
 
         let loaded_accounts_data_size = base_account_size as u32 * 2;
@@ -2276,12 +2383,15 @@ mod tests {
         );
 
         let validation_result = Ok(ValidatedTransactionDetails::default());
+        // All accounts are hot
+        let chili_peppers_watermark = u64::MAX;
         let load_result = load_transaction(
             &mut account_loader,
             &sanitized_transaction,
             validation_result.clone(),
             &mut TransactionErrorMetrics::default(),
             &rent,
+            chili_peppers_watermark,
         );
 
         assert!(matches!(
@@ -2294,12 +2404,15 @@ mod tests {
 
         let validation_result = Err(TransactionError::InvalidWritableAccount);
 
+        // All accounts are hot
+        let chili_peppers_watermark = u64::MAX;
         let load_result = load_transaction(
             &mut account_loader,
             &sanitized_transaction,
             validation_result,
             &mut TransactionErrorMetrics::default(),
             &rent,
+            chili_peppers_watermark,
         );
 
         assert!(matches!(
@@ -2399,12 +2512,15 @@ mod tests {
             },
             ..ValidatedTransactionDetails::default()
         });
+        // All accounts are hot
+        let chili_peppers_watermark = u64::MAX;
         let _load_results = load_transaction(
             &mut account_loader,
             &sanitized_transaction,
             validation_result,
             &mut TransactionErrorMetrics::default(),
             &Rent::default(),
+            chili_peppers_watermark,
         );
 
         // ensure the loaded accounts are inspected
@@ -2526,10 +2642,12 @@ mod tests {
                 LoadedTransactionAccount {
                     account: fee_payer_account.clone(),
                     loaded_size: fee_payer_size as usize,
+                    ..LoadedTransactionAccount::default()
                 },
                 MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
                 &mut TransactionErrorMetrics::default(),
                 &Rent::default(),
+                0, u64::MAX, // eg. all accounts are hot
             )
             .unwrap();
 
@@ -2959,10 +3077,12 @@ mod tests {
                 LoadedTransactionAccount {
                     loaded_size: TRANSACTION_ACCOUNT_BASE_SIZE + fee_payer_account.data().len(),
                     account: fee_payer_account,
+                    ..LoadedTransactionAccount::default()
                 },
                 MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
                 &mut TransactionErrorMetrics::default(),
                 &Rent::default(),
+                0, u64::MAX, // eg. all accounts are hot
             )
             .unwrap();
 

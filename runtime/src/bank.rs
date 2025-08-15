@@ -3275,6 +3275,8 @@ impl Bank {
             epoch_total_stake: self.get_current_epoch_total_stake(),
             feature_set: self.feature_set.runtime_features(),
             rent: self.rent_collector.rent.clone(),
+            chili_peppers_watermark: 0, // `0` makes all accounts cold
+                                        // TAO TODO - use self.initial_chili_peppers here
         };
 
         let sanitized_output = self

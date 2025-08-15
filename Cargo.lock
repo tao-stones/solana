@@ -10886,6 +10886,7 @@ dependencies = [
  "serde_derive",
  "shuttle",
  "solana-account",
+ "solana-accounts-db",
  "solana-bpf-loader-program",
  "solana-clock",
  "solana-compute-budget-instruction",

@@ -557,6 +557,7 @@ impl PartialEq for Bank {
             epoch_rewards_calculation_cache: _,
             chili_peppers: _,
             chili_peppers_accumulator: _,
+            accessed_account_pubkeys: _,
             // Ignore new fields explicitly if they do not impact PartialEq.
             // Adding ".." will remove compile-time checks that if a new field
             // is added to the struct, this PartialEq is accordingly updated.
@@ -915,6 +916,20 @@ pub struct Bank {
     /// accumulated chili peppers in this bank from processed transactions. It is added to
     /// self.chili_peppers to pass down to child bank to ensure monotonically increase chili meter
     chili_peppers_accumulator: AtomicU32,
+    /// track accounts accessed by this bank; when bank is frozen, these accounts chili peppers
+    /// will be updated with frozen's bank's chili counter.
+    /// - "Accessed" defined as accounts that are successfully loaded. A corner case is if
+    /// transaction is FeesOnly due to some of accounts failed to load, those successfully loaded
+    /// accounts might need to be considered as "accessed" since tx fee is collected in this case.
+    /// Leaving this out for now, only take "Executed" trnsaction's accounts as "accessed".
+    /// - implementation: accounts_db currently doesn't track list of accessed account for slots,
+    /// there will be optimized way to do so in the future. For now, opt to let bank tracking this by
+    /// pubkeys, then retrives AccountSharedData from accounts_db when bank freezes, then update
+    /// account with current bank's chili peppers.
+    /// - alternative: update accounts chili peppers right after execution. Pro: no need to cache
+    /// accounts' info; Con: accounts accessed by same bank will have different chili peppers,
+    /// making debugging harder. Not to prematurely optimize this.
+    accessed_account_pubkeys: DashSet<Pubkey>,
 }
 
 #[derive(Debug)]
@@ -1114,6 +1129,7 @@ impl Bank {
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
             chili_peppers: 0,
             chili_peppers_accumulator: AtomicU32::new(0),
+            accessed_account_pubkeys: DashSet::<Pubkey>::default(),
         };
 
         bank.transaction_processor =
@@ -1373,6 +1389,7 @@ impl Bank {
             epoch_rewards_calculation_cache: parent.epoch_rewards_calculation_cache.clone(),
             chili_peppers: parent.chili_peppers(),
             chili_peppers_accumulator: AtomicU32::new(0),
+            accessed_account_pubkeys: DashSet::<Pubkey>::default(),
         };
 
         let (_, ancestors_time_us) = measure_us!({
@@ -1835,6 +1852,7 @@ impl Bank {
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
             chili_peppers: fields.chili_peppers,
             chili_peppers_accumulator: AtomicU32::new(0),
+            accessed_account_pubkeys: DashSet::<Pubkey>::default(),
         };
 
         bank.transaction_processor =
@@ -2532,6 +2550,10 @@ impl Bank {
 
             // freeze is a one-way trip, idempotent
             self.freeze_started.store(true, Relaxed);
+
+            // update accounts metadata's chili counter before updating lt hash
+            self.update_accessed_accounts_chili_peppers();
+
             // updating the accounts lt hash must happen *outside* of hash_internal_state() so
             // that rehash() can be called and *not* modify self.accounts_lt_hash.
             self.update_accounts_lt_hash();
@@ -3666,10 +3688,24 @@ impl Bank {
         self.update_accounts_data_size_delta_on_chain(accounts_data_len_delta);
 
         // accumulates loaded accounts bytes
+        // TAO - also accumulate accessed_accounts here, pay attention to FeesOnly case
         let loaded_accounts_data_size = processing_results
             .iter()
             .filter_map(|processing_result| processing_result.processed_transaction())
-            .map(|processed_tx| processed_tx.loaded_accounts_data_size())
+            .map(|processed_tx| {
+                // Some messy code to insert accounts in Executed Transaction 'accessed" list
+                match processed_tx {
+                    solana_svm::transaction_processing_result::ProcessedTransaction::Executed(executed_tx) => {
+                        executed_tx.loaded_transaction.accounts.iter().for_each(|(account_address, _)| {
+                            self.accessed_account_pubkeys.insert(*account_address);
+                        });
+                    },
+                    solana_svm::transaction_processing_result::ProcessedTransaction::FeesOnly(_) => {},
+                }
+
+                // then collect loaded bytes
+                processed_tx.loaded_accounts_data_size()
+            })
             .sum();
         self.increment_chili_peppers_accumulator(loaded_accounts_data_size);
 
@@ -5673,6 +5709,27 @@ impl Bank {
     fn increment_chili_peppers_accumulator(&self, loaded_bytes: u32) {
         self.chili_peppers_accumulator
             .fetch_add(loaded_bytes, Relaxed);
+    }
+
+    fn update_accessed_accounts_chili_peppers(&self) {
+        assert!(
+            !self.freeze_started(),
+            "Update accessed accounts on a bank that is is undergoing freezing!"
+        );
+
+
+        // dumb implementation for now, leave optimal solution to accounts_db
+        let chili_pepper_mark = self.chili_peppers();
+        for accessed_account_pubkey in self.accessed_account_pubkeys.iter() {
+            // all the accounts are already loaded by this bank, it won't be slow
+            match self.load_slow_with_fixed_root(&self.ancestors, &accessed_account_pubkey) {
+                Some((account_shared_data, slot)) => {
+                    assert_eq!(slot, self.slot);
+                    account_shared_data.update_chili_peppers(chili_pepper_mark);
+                },
+                None => unreachable!(),
+            }
+        }
     }
 }
 

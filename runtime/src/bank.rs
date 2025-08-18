@@ -73,6 +73,7 @@ use {
         AccountSharedData, InheritableAccountFields, ReadableAccount, WritableAccount,
     },
     solana_accounts_db::{
+        account_chili_peppers::AccountChiliPeppers,
         account_locks::validate_account_locks,
         accounts::{AccountAddressFilter, Accounts, PubkeyAccountSlot},
         accounts_db::{self, AccountStorageEntry, AccountsDb, AccountsDbConfig, DuplicatesLtHash},
@@ -5725,7 +5726,7 @@ impl Bank {
             match self.load_slow_with_fixed_root(&self.ancestors, &accessed_account_pubkey) {
                 Some((account_shared_data, slot)) => {
                     assert_eq!(slot, self.slot);
-                    account_shared_data.update_chili_peppers(chili_pepper_mark);
+                    account_shared_data.update_chili_peppers(chili_pepper_mark, &accessed_account_pubkey);
                 },
                 None => unreachable!(),
             }

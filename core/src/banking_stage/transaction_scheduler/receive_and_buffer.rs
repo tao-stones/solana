@@ -611,12 +611,28 @@ fn calculate_priority_and_cost(
     // the cost is a small fraction.
     // An offset of 1 is used in the denominator to explicitly avoid division by zero.
     const MULTIPLIER: u64 = 1_000_000;
-    (
-        reward
+    let mut priority = reward
             .saturating_mul(MULTIPLIER)
-            .saturating_div(cost.saturating_add(1)),
-        cost,
-    )
+            .saturating_div(cost.saturating_add(1));
+
+    // Intentionally decoup chili peppers from cost-model when using it in packing priority
+    // calculation.
+    // If transaction requested `zero` chili-peppers, mean it uses only hot accounts, its
+    // packing priority should not be reduced; otherwise add requested chili peppers to
+    // denominator.
+    let requested_chili_peppers_limit = match transaction
+            .compute_budget_instruction_details()
+            .sanitize_and_convert_to_compute_budget_limits(&bank.feature_set)
+        {
+            Ok(_compute_budget_limits) => 0, // TODO use compute_budget_limits.chili_peppers,
+            Err(_) => unreachable!("transaction is sanitized for compute budget limits"),
+        };
+    if requested_chili_peppers_limit != 0 {
+        // TODO - may need use MULTIPLIER too
+        priority = priority.saturating_div(requested_chili_peppers_limit);
+    }
+
+    (priority, cost,)
 }
 
 /// Given the epoch, the minimum deactivation slot, and the current slot,

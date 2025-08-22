@@ -561,6 +561,7 @@ impl PartialEq for Bank {
             block_id,
             bank_hash_stats: _,
             epoch_rewards_calculation_cache: _,
+            requested_chili_peppers_accumulator: _,
             // Ignore new fields explicitly if they do not impact PartialEq.
             // Adding ".." will remove compile-time checks that if a new field
             // is added to the struct, this PartialEq is accordingly updated.
@@ -911,6 +912,12 @@ pub struct Bank {
     /// This is used to avoid recalculating the same epoch rewards at epoch boundary.
     /// The hashmap is keyed by parent_hash.
     epoch_rewards_calculation_cache: Arc<Mutex<HashMap<Hash, Arc<PartitionedRewardsCalculation>>>>,
+
+    /// accumulated requested chili peppers from packed transactions;
+    /// It is used by block packer to track packed transactions wouldn't exceed block's chili
+    /// pepper limit.
+    /// It can be part of CostTracker, intentionally leave it outside of it for now.
+    requested_chili_peppers_accumulator: AtomicU64,
 }
 
 #[derive(Debug)]
@@ -1108,6 +1115,7 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::default(),
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
+            requested_chili_peppers_accumulator: AtomicU64::new(0),
         };
 
         bank.transaction_processor =
@@ -1361,6 +1369,7 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::default(),
             epoch_rewards_calculation_cache: parent.epoch_rewards_calculation_cache.clone(),
+            requested_chili_peppers_accumulator: AtomicU64::new(0),
         };
 
         let (_, ancestors_time_us) = measure_us!({
@@ -1821,6 +1830,7 @@ impl Bank {
             block_id: RwLock::new(None),
             bank_hash_stats: AtomicBankHashStats::new(&fields.bank_hash_stats),
             epoch_rewards_calculation_cache: Arc::new(Mutex::new(HashMap::default())),
+            requested_chili_peppers_accumulator: AtomicU64::new(0),
         };
 
         bank.transaction_processor =
@@ -5659,6 +5669,26 @@ impl Bank {
     /// Return total transaction fee collected
     pub fn get_collector_fee_details(&self) -> CollectorFeeDetails {
         self.collector_fee_details.read().unwrap().clone()
+    }
+
+    /// Used by Block Packer:
+    /// try to accumulated tx's requested chili peppers to current block,
+    /// Error if it would exceed block's chili pepper limit
+    pub fn try_accumulate_chili_peppers_if_below_limit(&self, requested_chili_peppers: u64) -> Result<()> {
+        // TODO - use properly defined limit
+        const BLOCK_CHILI_PEPPERS_LIMIT: u64 = u64::MAX;
+
+        self.requested_chili_peppers_accumulator.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |old| {
+            let new = old.saturating_add(requested_chili_peppers);
+            if new < BLOCK_CHILI_PEPPERS_LIMIT {
+                Some(new)
+            } else {
+                None // no update, signal failure
+            }
+        })
+        .map(|_old| ())
+        .map_err(|_cur| TransactionError::WouldExceedAccountDataBlockLimit) // TODO - define
+                                                                            // correct err in sdk
     }
 }
 

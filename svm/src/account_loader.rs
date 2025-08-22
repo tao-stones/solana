@@ -121,7 +121,7 @@ impl Default for ValidatedTransactionDetails {
                 solana_program_runtime::execution_budget::MAX_LOADED_ACCOUNTS_DATA_SIZE_BYTES,
             fee_details: FeeDetails::default(),
             loaded_fee_payer_account: LoadedTransactionAccount::default(),
-            chili_peppers_limit: u64::MAX, // TODO - replace with solana_program_runtime::execution_budget::DEFAULT_CHILI_PEPPERS
+            chili_peppers_limit: solana_program_runtime::execution_budget::DEFAULT_CHILI_PEPPERS
         }
     }
 }

@@ -647,7 +647,7 @@ impl<FG: ForkGraph> TransactionBatchProcessor<FG> {
             loaded_accounts_bytes_limit: compute_budget_and_limits.loaded_accounts_data_size_limit,
             compute_budget: compute_budget_and_limits.budget,
             loaded_fee_payer_account: loaded_fee_payer,
-            chili_peppers_limit: 0, // TODO replace with compute_budget_and_limits.chili_peppers,
+            chili_peppers_limit: compute_budget_and_limits.chili_peppers,
         })
     }
 

@@ -559,6 +559,7 @@ impl PartialEq for Bank {
             chili_peppers: _,
             chili_peppers_accumulator: _,
             accessed_account_pubkeys: _,
+            requested_chili_peppers_accumulator: _,
             // Ignore new fields explicitly if they do not impact PartialEq.
             // Adding ".." will remove compile-time checks that if a new field
             // is added to the struct, this PartialEq is accordingly updated.
@@ -931,6 +932,11 @@ pub struct Bank {
     /// accounts' info; Con: accounts accessed by same bank will have different chili peppers,
     /// making debugging harder. Not to prematurely optimize this.
     accessed_account_pubkeys: DashSet<Pubkey>,
+    /// accumulated requested chili peppers from packed transactions;
+    /// It is used by block packer to track packed transactions wouldn't exceed block's chili
+    /// pepper limit.
+    /// It can be part of CostTracker, intentionally leave it outside of it for now.
+    requested_chili_peppers_accumulator: AtomicU64,
 }
 
 #[derive(Debug)]
@@ -1131,6 +1137,7 @@ impl Bank {
             chili_peppers: 0,
             chili_peppers_accumulator: AtomicU32::new(0),
             accessed_account_pubkeys: DashSet::<Pubkey>::default(),
+            requested_chili_peppers_accumulator: AtomicU64::new(0),
         };
 
         bank.transaction_processor =
@@ -1391,6 +1398,7 @@ impl Bank {
             chili_peppers: parent.chili_peppers(),
             chili_peppers_accumulator: AtomicU32::new(0),
             accessed_account_pubkeys: DashSet::<Pubkey>::default(),
+            requested_chili_peppers_accumulator: AtomicU64::new(0),
         };
 
         let (_, ancestors_time_us) = measure_us!({
@@ -1854,6 +1862,7 @@ impl Bank {
             chili_peppers: fields.chili_peppers,
             chili_peppers_accumulator: AtomicU32::new(0),
             accessed_account_pubkeys: DashSet::<Pubkey>::default(),
+            requested_chili_peppers_accumulator: AtomicU64::new(0),
         };
 
         bank.transaction_processor =
@@ -5733,6 +5742,26 @@ impl Bank {
                 None => unreachable!(),
             }
         }
+    }
+
+    /// Used by Block Packer:
+    /// try to accumulated tx's requested chili peppers to current block,
+    /// Error if it would exceed block's chili pepper limit
+    pub fn try_accumulate_chili_peppers_if_below_limit(&self, requested_chili_peppers: u64) -> Result<()> {
+        // TODO - use properly defined limit
+        const BLOCK_CHILI_PEPPERS_LIMIT: u64 = u64::MAX;
+
+        self.requested_chili_peppers_accumulator.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |old| {
+            let new = old.saturating_add(requested_chili_peppers);
+            if new < BLOCK_CHILI_PEPPERS_LIMIT {
+                Some(new)
+            } else {
+                None // no update, signal failure
+            }
+        })
+        .map(|_old| ())
+        .map_err(|_cur| TransactionError::WouldExceedAccountDataBlockLimit) // TODO - define
+                                                                            // correct err in sdk
     }
 }
 

@@ -163,13 +163,31 @@ impl Consumer {
         txs: &[impl TransactionWithMeta],
         pre_results: impl Iterator<Item = Result<(), TransactionError>>,
     ) -> ProcessTransactionBatchOutput {
+
+        // NOTE - 
+        // in current reserve-then-refund regime, we either need to fit chili-peppers into same
+        // process (which is undesireble), or can check chili peppers *after* execution, no refund.
+        // The drawback with this is we'd already loaded cold accounts - which is also undesirable
+        //
+        // With relaxed packing rules, few transactions selected here will not be committed/recorded,
+        // for prototyping purpose, I'll check chilis here without refund logic. Actual implementation
+        // should consider it carefully.
+        let transaction_chili_pepper_results = {
+            txs.iter().zip(pre_results).map(|(_tx, pre_result)| pre_result.and_then(|()| {
+                let tx_requested_chili_peppers = 0; // TODO - use tx.chili_peppers();
+                bank.try_accumulate_chili_peppers_if_below_limit(tx_requested_chili_peppers)
+            }))
+        };
+
+        // TODO - add WouldExceedChiliPeppers error to retryable list
+
         let (
             (transaction_qos_cost_results, cost_model_throttled_transactions_count),
             cost_model_us,
         ) = measure_us!(self.qos_service.select_and_accumulate_transaction_costs(
             bank,
             txs,
-            pre_results
+            transaction_chili_pepper_results,
         ));
 
         // Only lock accounts for those transactions are selected for the block;

@@ -46,3 +46,12 @@ pub const MAX_BLOCK_ACCOUNTS_DATA_SIZE_DELTA: u64 = 100_000_000;
 pub const fn simd_0286_block_limits() -> u64 {
     MAX_BLOCK_UNITS_SIMD_0286
 }
+
+
+/// Max chili peppers a block can consume.
+/// Note: loading hot accounts consumes `0` chili peppers. Cold accounts consume
+///       number of loaded bytes chili peppers.
+/// One way to find the value would be a percenbtage of (slot-time / bytes-from-disk) on average
+/// hardware. For example, if in `xyz` ms, average machine can load `abc` Bytes, and agree to spend
+/// up to 50% of slot time to load cold accounts, then the value = (xyz/abc)*0.5
+pub const BLOCK_CHILI_PEPPERS_LIMIT: u64 = u64::MAX;  // <-- this is today

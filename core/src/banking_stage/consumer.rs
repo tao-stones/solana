@@ -173,8 +173,13 @@ impl Consumer {
         // for prototyping purpose, I'll check chilis here without refund logic. Actual implementation
         // should consider it carefully.
         let transaction_chili_pepper_results = {
-            txs.iter().zip(pre_results).map(|(_tx, pre_result)| pre_result.and_then(|()| {
-                let tx_requested_chili_peppers = 0; // TODO - use tx.chili_peppers();
+            txs.iter().zip(pre_results).map(|(tx, pre_result)| pre_result.and_then(|()| {
+                let tx_requested_chili_peppers = tx
+                    .compute_budget_instruction_details()
+                    .sanitize_and_convert_to_compute_budget_limits(&bank.feature_set)
+                    .ok()
+                    .unwrap()  // CB instructions have already been sanitized 
+                    .chili_peppers;
                 bank.try_accumulate_chili_peppers_if_below_limit(tx_requested_chili_peppers)
             }))
         };

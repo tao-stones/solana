@@ -5748,12 +5748,9 @@ impl Bank {
     /// try to accumulated tx's requested chili peppers to current block,
     /// Error if it would exceed block's chili pepper limit
     pub fn try_accumulate_chili_peppers_if_below_limit(&self, requested_chili_peppers: u64) -> Result<()> {
-        // TODO - use properly defined limit
-        const BLOCK_CHILI_PEPPERS_LIMIT: u64 = u64::MAX;
-
         self.requested_chili_peppers_accumulator.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |old| {
             let new = old.saturating_add(requested_chili_peppers);
-            if new < BLOCK_CHILI_PEPPERS_LIMIT {
+            if new < solana_cost_model::block_cost_limits::BLOCK_CHILI_PEPPERS_LIMIT {
                 Some(new)
             } else {
                 None // no update, signal failure

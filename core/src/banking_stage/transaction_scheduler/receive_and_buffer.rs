@@ -624,7 +624,7 @@ fn calculate_priority_and_cost(
             .compute_budget_instruction_details()
             .sanitize_and_convert_to_compute_budget_limits(&bank.feature_set)
         {
-            Ok(_compute_budget_limits) => 0, // TODO use compute_budget_limits.chili_peppers,
+            Ok(compute_budget_limits) => compute_budget_limits.chili_peppers,
             Err(_) => unreachable!("transaction is sanitized for compute budget limits"),
         };
     if requested_chili_peppers_limit != 0 {

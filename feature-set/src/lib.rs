@@ -1126,6 +1126,10 @@ pub mod enforce_fixed_fec_set {
     solana_pubkey::declare_id!("fixfecLZYMfkGzwq6NJA11Yw6KYztzXiK9QcL3K78in");
 }
 
+pub mod static_instruction_limit {
+    solana_pubkey::declare_id!("64ixypL1HPu8WtJhNSMb9mSgfFaJvsANuRkTbHyuLfnx");
+}
+
 pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::new(|| {
     [
         (secp256k1_program_enabled::id(), "secp256k1 program"),
@@ -2034,6 +2038,10 @@ pub static FEATURE_NAMES: LazyLock<AHashMap<Pubkey, &'static str>> = LazyLock::n
         (
             enforce_fixed_fec_set::id(),
             "SIMD-0317: Enforce 32 data + 32 coding shreds",
+        ),
+        (
+            static_instruction_limit::id(),
+            "SIMD-0160: static instruction limit",
         ),
         /*************** ADD NEW FEATURES HERE ***************/
     ]

@@ -4599,6 +4599,14 @@ impl Bank {
             }
             let message_hash = if verification_mode == TransactionVerificationMode::FullVerification
             {
+                // SIMD-0160, check instruction limit before signature verificaton
+                if self
+                    .feature_set
+                    .is_active(&agave_feature_set::static_instruction_limit::id())
+                    && tx.message.instructions().len() > 64
+                {
+                    return Err(solana_transaction_error::TransactionError::SanitizeFailure);
+                }
                 tx.verify_and_hash_message()?
             } else {
                 tx.message.hash()

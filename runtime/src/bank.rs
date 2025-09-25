@@ -4603,7 +4603,8 @@ impl Bank {
                 if self
                     .feature_set
                     .is_active(&agave_feature_set::static_instruction_limit::id())
-                    && tx.message.instructions().len() > 64
+                    && tx.message.instructions().len()
+                        > solana_transaction_context::MAX_INSTRUCTION_TRACE_LENGTH
                 {
                     return Err(solana_transaction_error::TransactionError::SanitizeFailure);
                 }

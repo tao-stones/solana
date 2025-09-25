@@ -442,6 +442,7 @@ dependencies = [
  "solana-svm-transaction",
  "solana-system-interface",
  "solana-transaction",
+ "solana-transaction-context",
 ]
 
 [[package]]

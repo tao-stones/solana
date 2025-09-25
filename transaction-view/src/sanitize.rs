@@ -59,7 +59,10 @@ fn sanitize_instructions(
     enable_static_instruction_limit: bool,
 ) -> Result<()> {
     // SIMD-160: transaction can not have more than 64 top level instructions
-    if enable_static_instruction_limit && view.num_instructions() > 64 {
+    if enable_static_instruction_limit
+        && usize::from(view.num_instructions())
+            > solana_transaction_context::MAX_INSTRUCTION_TRACE_LENGTH
+    {
         return Err(TransactionViewError::SanitizeError);
     }
 

@@ -10443,6 +10443,7 @@ dependencies = [
  "solana-system-interface",
  "solana-system-transaction",
  "solana-transaction",
+ "solana-transaction-context",
  "solana-transaction-error",
  "solana-vote-interface",
  "thiserror 2.0.16",

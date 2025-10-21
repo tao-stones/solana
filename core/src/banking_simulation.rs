@@ -846,6 +846,7 @@ impl BankingSimulator {
             None,
         );
 
+        let (tpu_feedback_sender, _tcp_feedback_receiver) = unbounded();
         info!("Start banking stage!...");
         let banking_stage = BankingStage::new_num_threads(
             block_production_method.clone(),
@@ -862,6 +863,7 @@ impl BankingSimulator {
             None,
             bank_forks.clone(),
             None,
+            tpu_feedback_sender,
         );
 
         let (&_slot, &raw_base_event_time) = freeze_time_by_slot

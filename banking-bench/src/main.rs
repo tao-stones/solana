@@ -481,6 +481,8 @@ fn main() {
         gossip_vote_sender,
         gossip_vote_receiver,
     } = banking_tracer_channels;
+
+    let (tpu_feedback_sender, _tpu_feedback_receiver) = unbounded();
     let banking_stage = BankingStage::new_num_threads(
         block_production_method.clone(),
         poh_recorder.clone(),
@@ -498,6 +500,7 @@ fn main() {
         None,
         bank_forks.clone(),
         None,
+        tpu_feedback_sender,
     );
 
     // This bench processes transactions, starting from the very first bank, so special-casing is

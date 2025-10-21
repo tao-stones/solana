@@ -232,6 +232,10 @@ impl Tpu {
         )
         .unwrap();
 
+        // TAO TODO - tpu_feedback_receiver should be handed over to TPU streamer.
+        //            Don't think need to do feedback for vote, nor to forwards. Only tpu.
+        let (tpu_feedback_sender, _tpu_feedback_receiver) = unbounded();
+
         let (tpu_quic_t, key_updater) = if vortexor_receivers.is_none() {
             // Streamer for TPU
             let SpawnServerResult {
@@ -347,6 +351,7 @@ impl Tpu {
             log_messages_bytes_limit,
             bank_forks.clone(),
             prioritization_fee_cache,
+            tpu_feedback_sender,
         );
 
         #[cfg(unix)]

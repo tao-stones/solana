@@ -4,7 +4,10 @@ use {
         leader_slot_timing_metrics::LeaderExecuteAndCommitTimings,
         scheduler_messages::{ConsumeWork, FinishedConsumeWork},
     },
-    crate::banking_stage::consumer::{ExecutionFlags, RetryableIndex},
+    crate::{
+        banking_stage::consumer::{ExecutionFlags, RetryableIndex},
+        tpu_feedback_sender::*,
+    },
     crossbeam_channel::{Receiver, SendError, Sender, TryRecvError},
     solana_poh::poh_recorder::{LeaderState, SharedLeaderState},
     solana_runtime_transaction::transaction_with_meta::TransactionWithMeta,
@@ -42,6 +45,8 @@ pub(crate) struct ConsumeWorker<Tx> {
 
     shared_leader_state: SharedLeaderState,
     metrics: Arc<ConsumeWorkerMetrics>,
+
+    tpu_feedback_sender: Arc<TpuFeedbackSender>,
 }
 
 impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
@@ -52,6 +57,7 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
         consumer: Consumer,
         consumed_sender: Sender<FinishedConsumeWork<Tx>>,
         shared_leader_state: SharedLeaderState,
+        tpu_feedback_sender: Arc<TpuFeedbackSender>,
     ) -> Self {
         Self {
             exit,
@@ -60,6 +66,7 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
             consumed_sender,
             shared_leader_state,
             metrics: Arc::new(ConsumeWorkerMetrics::new(id)),
+            tpu_feedback_sender,
         }
     }
 
@@ -76,9 +83,17 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
             match self.consume_receiver.try_recv() {
                 Ok(work) => {
                     did_work = true;
+                    // TAO NOTE - reporting transactions as being Scheduled when worker received them
+                    work.transactions.iter().for_each(|tx| {
+                        self.tpu_feedback_sender
+                            .on_transaction_event(tx, PackingEvent::Scheduled);
+                    });
+
                     match self.consume(work)? {
                         ProcessingStatus::Processed => {}
                         ProcessingStatus::CouldNotProcess(work) => {
+                            // TAO NOTE - "work" being retried due to no working bank. This
+                            // isn't event concerning Streamer. Not reporting it.
                             self.retry_drain(work)?;
                         }
                     }
@@ -123,6 +138,52 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
             &work.max_ages,
             ExecutionFlags::default(),
         );
+        // TAO NOTE - reporting transactions state immediately after being processed.
+        match output
+            .execute_and_commit_transactions_output
+            .commit_transactions_result
+        {
+            Err(ref poh_recorder_err) => {
+                // TAO NOTE - poh recording error is no concern to Streamer, not reporting it for
+                // now, they could be reported as "processed" after its first try
+                println!(
+                    "TpuFeedback: ConsumeWork with {:?} transaction were not comitted due to poh \
+                     error {:?}",
+                    work.transactions.len(),
+                    poh_recorder_err
+                );
+            }
+            Ok(ref transaction_committed_status) => {
+                work.transactions
+                    .iter()
+                    .zip(transaction_committed_status)
+                    .for_each(|(transaction, transaction_committed_details)| {
+                        match transaction_committed_details {
+                            // TAO NOTE - tx is committed with result in committed.result. For
+                            // prototyping, detailed result is not necessary; only report to Streamer that this TX
+                            // landed.
+                            CommitTransactionDetails::Committed {
+                                compute_units: _,
+                                loaded_accounts_data_size: _,
+                                result: _,
+                                fee_payer_post_balance: _,
+                            } => {
+                                self.tpu_feedback_sender
+                                    .on_transaction_event(transaction, PackingEvent::Committed);
+                            }
+                            CommitTransactionDetails::NotCommitted(_transaction_error) => {
+                                // TAO NOTE - various transaction errors during account loading and
+                                // execution are treated *not* as punishable error,
+                                // Can dig into them individually later; for now, just report tx
+                                // was processed
+                                self.tpu_feedback_sender
+                                    .on_transaction_event(transaction, PackingEvent::Processed);
+                            }
+                        }
+                    });
+            }
+        };
+
         self.metrics.update_for_consume(&output);
         self.metrics.has_data.store(true, Ordering::Relaxed);
 

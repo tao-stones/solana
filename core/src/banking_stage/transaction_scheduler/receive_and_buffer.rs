@@ -9,8 +9,11 @@ use {
             EXTRA_CAPACITY,
         },
     },
-    crate::banking_stage::{
-        consumer::Consumer, decision_maker::BufferedPacketsDecision, scheduler_messages::MaxAge,
+    crate::{
+        banking_stage::{
+            consumer::Consumer, decision_maker::BufferedPacketsDecision, scheduler_messages::MaxAge,
+        },
+        tpu_feedback_sender::*,
     },
     agave_banking_stage_ingress_types::{BankingPacketBatch, BankingPacketReceiver},
     agave_transaction_view::{
@@ -105,6 +108,7 @@ pub(crate) trait ReceiveAndBuffer {
 pub(crate) struct TransactionViewReceiveAndBuffer {
     pub receiver: BankingPacketReceiver,
     pub sharable_banks: SharableBanks,
+    pub(crate) tpu_feedback_sender: Arc<TpuFeedbackSender>,
 }
 
 impl ReceiveAndBuffer for TransactionViewReceiveAndBuffer {
@@ -283,6 +287,13 @@ impl TransactionViewReceiveAndBuffer {
                 {
                     if let Err(err) = result {
                         match err {
+                            // TAO NOTE - failure of too-old and already-processed are not really
+                            // sender's fail. So not reporting back to Streamer on these events
+                            //
+                            // TAO NOTE - it is ok to cherry-picking "packing events" for
+                            // prototying; but need something more solid if turning into
+                            // production, perhaps move all event-handling to "sender backend",
+                            // where the only place cherry-picking happends.
                             TransactionError::BlockhashNotFound => {
                                 num_dropped_on_age += 1;
                             }
@@ -304,12 +315,31 @@ impl TransactionViewReceiveAndBuffer {
                     ) {
                         *result = Err(err);
                         num_dropped_on_fee_payer += 1;
+                        self.tpu_feedback_sender.on_transaction_event(
+                            transaction,
+                            PackingEvent::IngestingFailed(IngestingError::FeePayerFailure),
+                        );
                         container.remove_by_id(priority_id.id);
                         continue;
                     }
 
                     num_buffered += 1;
                 }
+
+                // TAO NOTE - reporting all non-errored transaction as being "Queued" for
+                // scheduling.
+                check_results
+                    .iter()
+                    .zip(transaction_priority_ids.iter())
+                    .filter(|(r, _)| r.is_ok())
+                    .for_each(|(_, priority_id)| {
+                        let transaction = container
+                            .get_transaction(priority_id.id)
+                            .expect("transaction must exist");
+                        self.tpu_feedback_sender
+                            .on_transaction_event(transaction, PackingEvent::Queued);
+                    });
+
                 // Push non-errored transaction into queue.
                 num_dropped_on_capacity += container.push_ids_into_queue(
                     check_results
@@ -328,6 +358,24 @@ impl TransactionViewReceiveAndBuffer {
 
         for packet_batch in packet_batch_message.iter() {
             for packet in packet_batch.iter() {
+                // TAO NOTE - somewhat hacky here. Anything come out of sigverify are transactions
+                // received from TPU streamer. Sigverify does some ifiltering, format checking and sig
+                // verifying. Marking packet as "disacrded" if not good. We don't suppose to use
+                // "discarded" packet here at all. I'm hacking here to:
+                // 1. report anything received form sigverify as "tpu received it from streamer";
+                // 2. any packet marked as discarded means it failed during sigverify;
+                // All these hackign won't be necessary if tpu_feedback_sender is also injected to
+                // sisgverify later.
+                let bytes_packet = packet.to_bytes_packet();
+                self.tpu_feedback_sender
+                    .on_packet_event(&bytes_packet, PackingEvent::Received);
+                if packet.meta().discard() {
+                    self.tpu_feedback_sender.on_packet_event(
+                        &bytes_packet,
+                        PackingEvent::IngestingFailed(IngestingError::DiscardedBySigverify),
+                    );
+                }
+
                 let Some(packet_data) = packet.data(..) else {
                     continue;
                 };
@@ -353,14 +401,32 @@ impl TransactionViewReceiveAndBuffer {
                                 PacketHandlingError::Sanitization
                                 | PacketHandlingError::ALTResolution,
                             ) => {
+                                self.tpu_feedback_sender.on_packet_event(
+                                    &bytes_packet,
+                                    PackingEvent::IngestingFailed(
+                                        IngestingError::SanitizationFailure,
+                                    ),
+                                );
                                 num_dropped_on_parsing_and_sanitization += 1;
                                 Err(())
                             }
                             Err(PacketHandlingError::LockValidation) => {
+                                self.tpu_feedback_sender.on_packet_event(
+                                    &bytes_packet,
+                                    PackingEvent::IngestingFailed(
+                                        IngestingError::LockValidationFailure,
+                                    ),
+                                );
                                 num_dropped_on_lock_validation += 1;
                                 Err(())
                             }
                             Err(PacketHandlingError::ComputeBudget) => {
+                                self.tpu_feedback_sender.on_packet_event(
+                                    &bytes_packet,
+                                    PackingEvent::IngestingFailed(
+                                        IngestingError::ComputeBudgetFailure,
+                                    ),
+                                );
                                 num_dropped_on_compute_budget += 1;
                                 Err(())
                             }
@@ -373,6 +439,9 @@ impl TransactionViewReceiveAndBuffer {
                         .priority();
                     transaction_priority_ids
                         .push(TransactionPriorityId::new(priority, transaction_id));
+                    // TAO NOTE - optionally we can feedback realtime queue priority/stats here too.
+                    //            But things are likely to change with Scheduler Binding. leave it
+                    //            as an option for now.
 
                     // If at capacity, run checks and remove invalid transactions.
                     if transaction_priority_ids.len() == EXTRA_CAPACITY {

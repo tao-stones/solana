@@ -20,6 +20,7 @@ use {
                 scheduler_error::SchedulerError,
             },
         },
+        tpu_feedback_sender::*,
         validator::BlockProductionMethod,
     },
     agave_banking_stage_ingress_types::BankingPacketReceiver,
@@ -382,6 +383,7 @@ pub struct BankingStage {
     committer: Committer,
     log_messages_bytes_limit: Option<usize>,
     threads: FuturesUnordered<NamedTask<std::thread::Result<()>>>,
+    tpu_feedback_sender: Arc<TpuFeedbackSender>,
 }
 
 impl BankingStage {
@@ -401,7 +403,15 @@ impl BankingStage {
         log_messages_bytes_limit: Option<usize>,
         bank_forks: Arc<RwLock<BankForks>>,
         prioritization_fee_cache: Option<Arc<PrioritizationFeeCache>>,
+        // TAO NOTE - taking tpu feedback channel sender, receiver is at streamer side
+        tpu_feedback_sender: Sender<TpuFeedback>,
     ) -> BankingStageHandle {
+        let exit_signal = Arc::new(AtomicBool::new(false));
+        let tpu_feedback_sender = Arc::new(TpuFeedbackSender::new(
+            tpu_feedback_sender,
+            exit_signal.clone(),
+        ));
+
         let committer = Committer::new(
             transaction_status_sender,
             replay_vote_sender,
@@ -412,7 +422,7 @@ impl BankingStage {
         let banking_shutdown_signal = CancellationToken::new();
         let manager = BankingStage {
             banking_shutdown_signal: banking_shutdown_signal.clone(),
-            worker_exit_signal: Arc::new(AtomicBool::new(false)),
+            worker_exit_signal: exit_signal,
             banking_control_receiver,
             tpu_vote_receiver,
             gossip_vote_receiver,
@@ -423,6 +433,7 @@ impl BankingStage {
             committer,
             log_messages_bytes_limit,
             threads: FuturesUnordered::default(),
+            tpu_feedback_sender: tpu_feedback_sender.clone(),
         };
 
         // Spawn the manager thread.
@@ -556,6 +567,7 @@ impl BankingStage {
         let receive_and_buffer = TransactionViewReceiveAndBuffer {
             receiver: self.non_vote_receiver.clone(),
             sharable_banks: self.bank_forks.read().unwrap().sharable_banks(),
+            tpu_feedback_sender: self.tpu_feedback_sender.clone(),
         };
 
         // Spawn vote worker.
@@ -584,6 +596,7 @@ impl BankingStage {
                 ),
                 finished_work_sender.clone(),
                 self.poh_recorder.read().unwrap().shared_leader_state(),
+                self.tpu_feedback_sender.clone(),
             );
 
             worker_metrics.push(consume_worker.metrics_handle());
@@ -618,6 +631,9 @@ impl BankingStage {
                                 bank_forks,
                                 $scheduler,
                                 worker_metrics,
+                                // TAO TODO - not injecting tpu_feedback_sender to scheduler yet,
+                                //            can do this for greater insight after scheduler
+                                //            binding.
                             );
 
                             match scheduler_controller.run() {

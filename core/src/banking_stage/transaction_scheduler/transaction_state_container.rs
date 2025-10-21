@@ -47,6 +47,13 @@ pub(crate) struct TransactionStateContainer<Tx: TransactionWithMeta> {
     held_transactions: Vec<TransactionPriorityId>,
 }
 
+// TAO TODO - another option is to emit tx states from here, since the StateContains suppose to
+// have tx's state for its entire lifetime in BS.
+// It is plan B because:
+// 1. the state described here many not be enough for Quic Qos, knowning exact errors help to
+//    "score" connection quality;
+// 2. the container isn't implemented as pure state machine, don't want to mix into perf/business
+//    logics, which will make code harder to maintain.
 #[cfg_attr(feature = "dev-context-only-utils", qualifiers(pub))]
 pub(crate) trait StateContainer<Tx: TransactionWithMeta> {
     /// Create a new `TransactionStateContainer` with the given capacity.

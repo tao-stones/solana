@@ -41,7 +41,7 @@ use {
     solana_svm_transaction::svm_message::SVMMessage,
     solana_transaction::sanitized::MessageHash,
     solana_transaction_error::TransactionError,
-    std::time::Instant,
+    std::{sync::Arc, time::Instant},
 };
 
 #[derive(Debug)]

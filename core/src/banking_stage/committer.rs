@@ -31,6 +31,7 @@ pub enum CommitTransactionDetails {
         loaded_accounts_data_size: u32,
         fee_payer_post_balance: u64,
         result: Result<(), TransactionError>,
+        total_fee: u64,
     },
     NotCommitted(TransactionError),
 }
@@ -90,6 +91,7 @@ impl Committer {
                         .loaded_accounts_data_size,
                     result: committed_tx.status.clone(),
                     fee_payer_post_balance: committed_tx.fee_payer_post_balance,
+                    total_fee: committed_tx.fee_details.total_fee(),
                 },
                 Err(err) => CommitTransactionDetails::NotCommitted(err.clone()),
             })

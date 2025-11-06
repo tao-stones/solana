@@ -24,6 +24,12 @@ pub struct TpuFeedback {
     // - `0` indicates no fault by the client, not punishable;
     // - `1` indicates maximum fault, such as invalid signature, are punishable;
     score: u8,
+    // for https://github.com/anza-xyz/agave/issues/7853, feedback
+    // includes the total fee a landed transaction pays;
+    // Note, it is not the reward (which burns part of fee), nor the priority
+    // (which considering total transction CU)
+    // not-landed transction will have value `0`
+    total_fee: u64,
 }
 
 /// Represents the lifecycle of a transaction as it moves through the TPU.
@@ -59,8 +65,10 @@ pub(crate) enum PackingEvent {
     Scheduled,
     ProcessingFailed(ProcessingError),
     Processed,
-    Committed,
+    Committed(TotalFee),
 }
+
+type TotalFee = u64;
 
 #[derive(Clone, Debug)]
 pub(crate) enum IngestingError {
@@ -108,7 +116,7 @@ impl PackingEvent {
         matches!(
             self,
             PackingEvent::Processed
-                | PackingEvent::Committed
+                | PackingEvent::Committed(_)
                 | PackingEvent::IngestingFailed(_)
                 | PackingEvent::SchedulingFailed(_)
                 | PackingEvent::ProcessingFailed(_)
@@ -162,7 +170,7 @@ impl PackingEvent {
                 if (matches!(event, PackingEvent::ProcessingFailed(_))
                     || matches!(event, PackingEvent::Scheduled)  // tx can be sent to re-schedule
                     || matches!(event, PackingEvent::Processed)
-                    || matches!(event, PackingEvent::Committed)) =>
+                    || matches!(event, PackingEvent::Committed(_))) =>
             {
                 true
             }
@@ -170,8 +178,17 @@ impl PackingEvent {
             | PackingEvent::SchedulingFailed(_)
             | PackingEvent::ProcessingFailed(_)
             | PackingEvent::Processed
-            | PackingEvent::Committed
+            | PackingEvent::Committed(_)
             | _ => false,
+        }
+    }
+
+    // Committed event comes with total fee a landed transaction pays,
+    // all other events have `0`
+    fn total_fee(&self) -> TotalFee {
+        match self {
+            PackingEvent::Committed(total_fee) => *total_fee,
+            _ => 0,
         }
     }
 }
@@ -244,6 +261,7 @@ impl TpuFeedbackSender {
     pub(crate) fn on_packet_event(&self, packet: &BytesPacket, event: PackingEvent) {
         // NOTE - let unwrap fail hard during try-out
         // grab first 8-bytes of signature from packet bytes, first byte is number of signatures.
+        // NOTE - this doesn't work well in txv1
         let transaction_id = u64::from_be_bytes(packet.buffer()[1..9].try_into().unwrap());
 
         let transaction_packing_event = TransactionPackingEvent {
@@ -362,6 +380,7 @@ impl TransactionPackingEventAggregator {
             Some(TpuFeedback {
                 transaction_id: transaction_id,
                 score: packing_event.score(),
+                total_fee: packing_event.total_fee(),
             })
         } else {
             None

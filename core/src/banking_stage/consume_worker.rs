@@ -5,7 +5,10 @@ use {
         scheduler_messages::{ConsumeWork, FinishedConsumeWork},
     },
     crate::{
-        banking_stage::consumer::{ExecutionFlags, RetryableIndex},
+        banking_stage::{
+            committer::CommitTransactionDetails,
+            consumer::{ExecutionFlags, RetryableIndex},
+        },
         tpu_feedback_sender::*,
     },
     crossbeam_channel::{Receiver, SendError, Sender, TryRecvError},
@@ -167,9 +170,12 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
                                 loaded_accounts_data_size: _,
                                 result: _,
                                 fee_payer_post_balance: _,
+                                total_fee,
                             } => {
-                                self.tpu_feedback_sender
-                                    .on_transaction_event(transaction, PackingEvent::Committed);
+                                self.tpu_feedback_sender.on_transaction_event(
+                                    transaction,
+                                    PackingEvent::Committed(*total_fee),
+                                );
                             }
                             CommitTransactionDetails::NotCommitted(_transaction_error) => {
                                 // TAO NOTE - various transaction errors during account loading and

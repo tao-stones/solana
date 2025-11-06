@@ -199,6 +199,7 @@ impl QosService {
                             loaded_accounts_data_size,
                             result: _,
                             fee_payer_post_balance: _,
+                            total_fee: _,
                         } => {
                             cost_tracker.update_execution_cost(
                                 tx_cost,

@@ -1,0 +1,17 @@
+[package]
+name = "txv1"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+rand = "0.8"
+solana-keypair = { workspace = true }
+solana-pubkey = { workspace = true }
+solana-signature = { workspace = true }
+solana-signer = { workspace = true }
+
+[dev-dependencies]
+# nothing extra
+
+[lints]
+workspace = true

@@ -122,6 +122,7 @@ members = [
     "transaction-status-client-types",
     "transaction-view",
     "turbine",
+    "txv1",
     "udp-client",
     "unified-scheduler-logic",
     "unified-scheduler-pool",

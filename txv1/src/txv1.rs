@@ -47,7 +47,7 @@ pub enum TxV1Error {
     Other(&'static str),
 }
 
-type ResultT<T> = Result<T, TxV1Error>;
+pub type ResultT<T> = Result<T, TxV1Error>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LegacyHeader {

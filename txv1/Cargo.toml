@@ -5,13 +5,16 @@ edition.workspace = true
 
 [dependencies]
 rand = "0.8"
+solana-hash = { workspace = true }
 solana-keypair = { workspace = true }
 solana-pubkey = { workspace = true }
 solana-signature = { workspace = true }
 solana-signer = { workspace = true }
+solana-transaction = { workspace = true }
 
 [dev-dependencies]
-# nothing extra
+solana-system-interface = { workspace = true, features = ["bincode"] }
+solana-transaction = { workspace = true, features = ["bincode"] }
 
 [lints]
 workspace = true

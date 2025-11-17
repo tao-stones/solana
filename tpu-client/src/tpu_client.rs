@@ -142,9 +142,18 @@ where
     /// to fanout size
     /// Returns the last error if all sends fail
     pub fn try_send_transaction_batch(&self, transactions: &[Transaction]) -> TransportResult<()> {
+        // TAO - hack here to convert transactions from TpuClient::send_batch(transactions)
+        //       into txv1 wire format for sending
         let wire_transactions = transactions
             .into_par_iter()
-            .map(|tx| bincode::serialize(&tx).expect("serialize Transaction in send_batch"))
+            .map(|tx|
+                /* TAO converft to txV1
+                bincode::serialize(&tx).expect("serialize Transaction in send_batch")
+                // */
+                solana_txv1::txv1_util::from_legacy_transaction(&tx.clone().into())
+                .expect("conversion transaction in send_transaction_batch to txv1 should success")
+                .serialize()
+            )
             .collect::<Vec<_>>();
         self.invoke(
             self.tpu_client
@@ -246,12 +255,18 @@ where
     M: ConnectionManager<ConnectionPool = P, NewConnectionConfig = C>,
     C: NewConnectionConfig,
 {
+    // TAO TODO - hack here to convert VersionedTransaction to TxV1's wire layout
     fn async_send_versioned_transaction(
         &self,
         transaction: VersionedTransaction,
     ) -> TransportResult<Signature> {
         let wire_transaction =
+        /* TAO convert to txV1
             bincode::serialize(&transaction).expect("serialize Transaction in send_batch");
+        // */
+            solana_txv1::txv1_util::from_legacy_transaction(&transaction)
+            .expect("conversion transaction in async_send to txv1 should success")
+            .serialize();
         self.send_wire_transaction(wire_transaction);
         Ok(transaction.signatures[0])
     }
@@ -262,7 +277,14 @@ where
     ) -> TransportResult<()> {
         let buffers = batch
             .into_par_iter()
-            .map(|tx| bincode::serialize(&tx).expect("serialize Transaction in send_batch"))
+            .map(|tx| 
+                /* TAO converft to txV1
+                bincode::serialize(&tx).expect("serialize Transaction in send_batch")
+                // */
+                solana_txv1::txv1_util::from_legacy_transaction(&tx)
+                .expect("conversion transaction in async_send_batch to txv1 should success")
+                .serialize()
+            )
             .collect::<Vec<_>>();
         self.try_send_wire_transaction_batch(buffers)?;
         Ok(())

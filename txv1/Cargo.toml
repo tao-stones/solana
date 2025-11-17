@@ -1,5 +1,5 @@
 [package]
-name = "txv1"
+name = "solana-txv1"
 version.workspace = true
 edition.workspace = true
 

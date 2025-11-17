@@ -11339,6 +11339,7 @@ dependencies = [
  "solana-signer",
  "solana-transaction",
  "solana-transaction-error",
+ "solana-txv1",
  "thiserror 2.0.17",
  "tokio",
 ]
@@ -11618,6 +11619,20 @@ dependencies = [
  "thiserror 2.0.17",
  "tokio",
  "wincode",
+]
+
+[[package]]
+name = "solana-txv1"
+version = "4.0.0-alpha.0"
+dependencies = [
+ "rand 0.8.5",
+ "solana-hash",
+ "solana-keypair",
+ "solana-pubkey",
+ "solana-signature",
+ "solana-signer",
+ "solana-system-interface",
+ "solana-transaction",
 ]
 
 [[package]]
@@ -13171,20 +13186,6 @@ dependencies = [
  "thiserror 2.0.17",
  "utf-8",
  "webpki-roots 0.26.8",
-]
-
-[[package]]
-name = "txv1"
-version = "4.0.0-alpha.0"
-dependencies = [
- "rand 0.8.5",
- "solana-hash",
- "solana-keypair",
- "solana-pubkey",
- "solana-signature",
- "solana-signer",
- "solana-system-interface",
- "solana-transaction",
 ]
 
 [[package]]

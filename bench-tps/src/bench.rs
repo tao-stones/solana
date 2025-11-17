@@ -980,6 +980,9 @@ fn do_tx_transfers<T: TpsClient + ?Sized>(
                         continue;
                     }
                 }
+                // TAO NOTE - for initial shortcut piping, when converting legacy Transaction to
+                // TransactionV1 before send to wire, the original signatures are also copied over,
+                // so the signatures tracking is unaffected.
                 signatures.push(tx.transaction.signatures[0]);
                 transactions.push(tx.transaction);
                 compute_unit_prices.push(tx.compute_unit_price);
@@ -1006,6 +1009,12 @@ fn do_tx_transfers<T: TpsClient + ?Sized>(
                 }
             }
 
+            // TAO TODO - client also needs to be updated to support txv1
+            //     sdk::AsyncClient::AsyncClient(..Vec<Transactio>..)
+            //                       async_send_versioned_transaction_batch(..Vec<VersionedTransaction>..)
+            //     agave::tpu_client::async_send_versioned_transaction(..)
+            //     |-- as shortcut, can do VersionedTransaction->Transaction->Txv1 here before
+            //         serialize(). Bypassing sdk::AsyncClient change (adding txv1 apis)
             if let Err(error) = client.send_batch(transactions) {
                 warn!("send_batch_sync in do_tx_transfers failed: {error}");
             }

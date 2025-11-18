@@ -110,6 +110,14 @@ pub fn init() {
 /// Caller must do packet.set_discard(true) if this returns false.
 #[must_use]
 fn verify_packet(packet: &mut PacketRefMut, reject_non_vote: bool) -> bool {
+    // TAO HACK - for bench-tps with single node cluster, skip sigverification for now,
+    //            returning true if it is txv1 packet, ok to panic
+    let ver_txv1 = packet.data(..).unwrap()[0];
+    if ver_txv1 == 129 {
+        // TAO TODO - implement verify_packet for txv1 here
+        return true;
+    }
+
     // If this packet was already marked as discard, drop it
     if packet.meta().discard() {
         return false;

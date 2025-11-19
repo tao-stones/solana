@@ -123,6 +123,45 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
             &work.max_ages,
             ExecutionFlags::default(),
         );
+
+        // TAO HACKING - reporting transactions state immediately after being processed.
+        match output
+            .execute_and_commit_transactions_output
+            .commit_transactions_result
+        {
+            Err(ref poh_recorder_err) => {
+                info!(
+                    "=== txv1: ConsumeWork with {:?} transaction were not comitted due to poh \
+                     error {:?}",
+                    work.transactions.len(),
+                    poh_recorder_err
+                );
+            }
+            Ok(ref transaction_committed_status) => {
+                work.transactions
+                    .iter()
+                    .zip(transaction_committed_status)
+                    .for_each(|(transaction, transaction_committed_details)| {
+                        match transaction_committed_details {
+                            // tx is committed with result in committed.result.
+                            crate::banking_stage::committer::CommitTransactionDetails::Committed {
+                                compute_units: _,
+                                loaded_accounts_data_size: _,
+                                result: _,
+                                fee_payer_post_balance: _,
+                            } => {
+                                info!("=== txv1: Committed {:?}", transaction);
+                            }
+                            crate::banking_stage::committer::CommitTransactionDetails::NotCommitted(_transaction_error) => {
+                                // various transaction errors during account loading and execution
+                                println!("=== txv1: Processed but not committed {:?}", transaction);
+                            }
+                        }
+                    });
+            }
+        };
+        // TAO HACK */
+
         self.metrics.update_for_consume(&output);
         self.metrics.has_data.store(true, Ordering::Relaxed);
 

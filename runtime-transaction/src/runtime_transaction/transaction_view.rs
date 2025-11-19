@@ -161,6 +161,8 @@ impl<D: TransactionData> TransactionWithMeta for RuntimeTransaction<ResolvedTran
             .collect();
 
         let message = match self.version() {
+            // TAO HACK - txv1 should work same as legacy for bench-tps
+            TransactionVersion::V1 |
             TransactionVersion::Legacy => {
                 VersionedMessage::Legacy(solana_message::legacy::Message {
                     header,

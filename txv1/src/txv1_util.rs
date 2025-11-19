@@ -14,9 +14,7 @@
 // Signatures (num_required_signatures * 64 bytes)
 //
 
-use crate::txv1::*;
-use solana_hash::Hash;
-use solana_transaction::versioned::VersionedTransaction;
+use {crate::txv1::*, solana_hash::Hash, solana_transaction::versioned::VersionedTransaction};
 
 /// Construct an owned TransactionV1 from a legacy/v0 solana Transaction.
 /// - TransactionConfigMask is set to 0 (we do not translate ComputeBudget instructions into config slots).
@@ -140,10 +138,12 @@ pub fn from_legacy_transaction(tx: &VersionedTransaction) -> ResultT<Transaction
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use solana_keypair::{Keypair, Signer};
-    use solana_system_interface::instruction as system_instruction;
-    use solana_transaction::{Message, Transaction};
+    use {
+        super::*,
+        solana_keypair::{Keypair, Signer},
+        solana_system_interface::instruction as system_instruction,
+        solana_transaction::{Message, Transaction},
+    };
 
     #[test]
     fn legacy_to_txv1_conversion_simple_transfer() {

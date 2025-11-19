@@ -277,6 +277,7 @@ impl TransactionViewReceiveAndBuffer {
                         &mut error_counters,
                     )
                 };
+                info!("=== txv1: bank.check_transactions result={:?}", check_results);
 
                 // Remove errored transactions
                 for (result, priority_id) in check_results
@@ -333,6 +334,7 @@ impl TransactionViewReceiveAndBuffer {
                 let Some(packet_data) = packet.data(..) else {
                     continue;
                 };
+                debug!("== txv1: packet has data, version={:?}, should_parse={should_parse}", packet_data[0]);
 
                 num_received += 1;
                 if !should_parse {
@@ -449,6 +451,13 @@ pub(crate) fn translate_to_runtime_view<D: TransactionData>(
     enable_static_instruction_limit: bool,
     transaction_account_lock_limit: usize,
 ) -> Result<(RuntimeTransaction<ResolvedTransactionView<D>>, u64), PacketHandlingError> {
+    // TAO TODO - handling txv1 separately
+    //            The least-resistance path for bench-tps seems to hack SanitizedTransactionView<>
+    //            to handle txv1 wire layout, ignoring/skipping "resolve ALT" part to keep same
+    //            flow here.
+    //            Hacking happens in Transaction_frame::try_new()
+    //            Can introduce zero-copy 'TransactionV1View' type later.
+
     // Parsing and basic sanitization checks
     let Ok(view) =
         SanitizedTransactionView::try_new_sanitized(data, enable_static_instruction_limit)
@@ -493,6 +502,8 @@ pub(crate) fn load_addresses_for_view<D: TransactionData>(
     bank: &Bank,
 ) -> Result<(Option<LoadedAddresses>, Slot), PacketHandlingError> {
     match view.version() {
+        // TAO HACK - txv1 doesnt support ALT
+        TransactionVersion::V1 |
         TransactionVersion::Legacy => Ok((None, u64::MAX)),
         TransactionVersion::V0 => bank
             .load_addresses_from_ref(view.address_table_lookup_iter())

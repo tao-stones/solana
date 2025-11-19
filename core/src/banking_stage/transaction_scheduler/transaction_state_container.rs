@@ -286,8 +286,12 @@ impl TransactionViewStateContainer {
             bytes.extend_from_slice(data);
         }
 
+        let state = f(Arc::clone(bytes_entry));
+
+        debug!("== txv1: id = {transaction_id}, bytes = {:?}, process_return = {:?}", bytes_entry, state);
+
         // Attempt to insert the transaction.
-        if let Ok(state) = f(Arc::clone(bytes_entry)) {
+        if let Ok(state) = state {
             vacant_entry.insert(state);
             Some(transaction_id)
         } else {

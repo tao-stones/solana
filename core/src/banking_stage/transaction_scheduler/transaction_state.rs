@@ -11,6 +11,7 @@ use qualifier_attr::qualifiers;
 /// retryable, the transaction is added back into the Option. If it si not
 /// retryable, the state is dropped.
 #[cfg_attr(feature = "dev-context-only-utils", qualifiers(pub))]
+#[derive(Debug)]
 pub(crate) struct TransactionState<Tx> {
     /// If `Some`, the transaction is available for scheduling.
     /// If `None`, the transaction is currently scheduled or being processed.

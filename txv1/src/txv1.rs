@@ -13,13 +13,16 @@
 //! - Default values are used when bits are not set (priority_fee = 0, compute_unit_limit = 0, ...).
 //!
 
-use std::collections::HashSet;
-use std::convert::TryInto;
-use std::io::{Cursor, Read};
-
-use solana_keypair::Keypair;
-use solana_signature::Signature;
-use solana_signer::Signer;
+use {
+    solana_keypair::Keypair,
+    solana_signature::Signature,
+    solana_signer::Signer,
+    std::{
+        collections::HashSet,
+        convert::TryInto,
+        io::{Cursor, Read},
+    },
+};
 
 /// TODO - to merge with TransactionError
 #[derive(Debug)]
@@ -464,8 +467,7 @@ impl TransactionV1 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use solana_pubkey::Pubkey;
+    use {super::*, solana_pubkey::Pubkey};
 
     #[test]
     fn roundtrip_simple_transaction() {

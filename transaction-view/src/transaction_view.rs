@@ -40,6 +40,7 @@ impl<D: TransactionData> TransactionView<false, D> {
         self,
         enable_static_instruction_limit: bool,
     ) -> Result<SanitizedTransactionView<D>> {
+        // TAO TODO - tiny up sanitizatino rule for txv1
         sanitize(&self, enable_static_instruction_limit)?;
         Ok(SanitizedTransactionView {
             data: self.data,

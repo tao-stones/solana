@@ -152,8 +152,7 @@ where
                 // */
                 solana_txv1::txv1_util::from_legacy_transaction(&tx.clone().into())
                 .expect("conversion transaction in send_transaction_batch to txv1 should success")
-                .serialize()
-            )
+                .serialize())
             .collect::<Vec<_>>();
         self.invoke(
             self.tpu_client
@@ -277,14 +276,13 @@ where
     ) -> TransportResult<()> {
         let buffers = batch
             .into_par_iter()
-            .map(|tx| 
+            .map(|tx|
                 /* TAO converft to txV1
                 bincode::serialize(&tx).expect("serialize Transaction in send_batch")
                 // */
                 solana_txv1::txv1_util::from_legacy_transaction(&tx)
                 .expect("conversion transaction in async_send_batch to txv1 should success")
-                .serialize()
-            )
+                .serialize())
             .collect::<Vec<_>>();
         self.try_send_wire_transaction_batch(buffers)?;
         Ok(())

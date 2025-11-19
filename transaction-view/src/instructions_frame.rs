@@ -22,10 +22,14 @@ pub(crate) struct InstructionsFrame {
 
 #[derive(Debug)]
 pub(crate) struct InstructionFrame {
-    num_accounts: u16,
-    data_len: u16,
-    num_accounts_len: u8, // either 1 or 2
-    data_len_len: u8,     // either 1 or 2
+    // TAO HACK - making them crate pub so TransactionView can construct it directly for txv1
+    pub(crate) num_accounts: u16,
+    pub(crate) data_len: u16,
+    pub(crate) num_accounts_len: u8, // either 1 or 2
+    pub(crate) data_len_len: u8,     // either 1 or 2
+    // TAO Hack - txv1 has ProgramAccountIndex in InstructionHeader, not in payload.
+    pub(crate) program_id_index: u8,
+    pub(crate) is_txv1: bool,
 }
 
 impl InstructionsFrame {
@@ -64,7 +68,7 @@ impl InstructionsFrame {
             // 3. Data ([u8])
 
             // Read the program ID index.
-            let _program_id_index = read_byte(bytes, offset)?;
+            let program_id_index = read_byte(bytes, offset)?;
 
             // Read the number of account indexes, and then update the offset
             // to skip over the account indexes.
@@ -85,6 +89,8 @@ impl InstructionsFrame {
                 num_accounts_len,
                 data_len,
                 data_len_len,
+                program_id_index,
+                is_txv1: false,
             });
         }
 
@@ -116,6 +122,8 @@ impl<'a> Iterator for InstructionsIterator<'a> {
                 num_accounts_len,
                 data_len,
                 data_len_len,
+                program_id_index,
+                is_txv1,
             } = self.frames[usize::from(self.index)];
 
             self.index = self.index.wrapping_add(1);
@@ -127,7 +135,11 @@ impl<'a> Iterator for InstructionsIterator<'a> {
 
             // Read the program ID index.
             // SAFETY: Offset and length checks have been done in the initial parsing.
-            let program_id_index = unsafe { unchecked_read_byte(self.bytes, &mut self.offset) };
+            // TAO HACK - if it's not txv1, need to advance offset
+            if !is_txv1 {
+                let _unused_program_id_index =
+                    unsafe { unchecked_read_byte(self.bytes, &mut self.offset) };
+            }
 
             // Move offset to accounts offset - do not re-parse u16.
             self.offset = self.offset.wrapping_add(usize::from(num_accounts_len));

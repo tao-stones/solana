@@ -418,4 +418,16 @@ mod tests {
         assert!(advance_offset_for_type::<MyStruct>(&bytes, &mut offset).is_ok());
         assert_eq!(offset, 2);
     }
+
+    #[test]
+    fn test_read_type() {
+        let bytes = [129, 1, 0, 2, 5, 1, 0, 0, 0, 212, 200, 238];
+        let mut offset = 5;
+
+        let type_size = core::mem::size_of::<u32>();
+        let transaction_config_mask = u32::from_le_bytes(unsafe {read_slice_data::<u8>(&bytes, &mut offset, type_size as u16)}.unwrap().try_into().unwrap());
+        assert_eq!(1u32, transaction_config_mask);
+        assert_eq!(9, offset);
+    }
+
 }

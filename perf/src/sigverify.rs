@@ -393,6 +393,9 @@ fn check_for_simple_vote_transaction(
     {
         packet.meta_mut().flags |= PacketFlags::SIMPLE_VOTE_TX;
     }
+
+    // TAO NOTE - add 2-account limit here for early checking on banking-stage
+
     Ok(())
 }
 

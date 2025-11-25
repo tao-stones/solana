@@ -48,6 +48,10 @@ impl<T> StaticMeta for RuntimeTransaction<T> {
         &self.meta.message_hash
     }
     fn is_simple_vote_transaction(&self) -> bool {
+        // TAO NOTE - two possible ways tighen SVT check:
+        //            1. update SDK https://github.com/anza-xyz/solana-sdk/blob/master/transaction/src/simple_vote_transaction_checker.rs
+        //               better ado it at upstream;
+        //            2. or short-cut: add 2-accounts limit here.
         self.meta.is_simple_vote_transaction
     }
     fn signature_details(&self) -> &TransactionSignatureDetails {

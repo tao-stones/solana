@@ -30,6 +30,11 @@ impl RuntimeTransaction<SanitizedVersionedTransaction> {
         let is_simple_vote_tx = is_simple_vote_tx
             .unwrap_or_else(|| is_simple_vote_transaction(&sanitized_versioned_tx));
 
+        // TAO TODO - remove DEBUG print
+        if is_simple_vote_tx {
+            log::info!("=== SDK === simple-vote-tx {:?}", sanitized_versioned_tx);
+        }
+
         let InstructionMeta {
             precompile_signature_details,
             instruction_data_len,

@@ -75,6 +75,11 @@ where
     let is_simple_vote_tx =
         is_simple_vote_tx.unwrap_or_else(|| is_simple_vote_transaction(transaction));
 
+    // TAO TODO - remove DEBUG print
+    if is_simple_vote_tx {
+        log::info!("=== VIEW === simple-vote-tx {:?}", transaction);
+    }
+
     let InstructionMeta {
         precompile_signature_details,
         instruction_data_len,

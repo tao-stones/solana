@@ -78,6 +78,7 @@ impl SchemaWrite for VersionedMsg {
             solana_message::VersionedMessage::Legacy(message) => LegacyMessage::size_of(message),
             // +1 for message version prefix
             solana_message::VersionedMessage::V0(message) => Ok(1 + V0Message::size_of(message)?),
+            solana_message::VersionedMessage::V1(_) => todo!(),
         }
     }
 
@@ -91,6 +92,7 @@ impl SchemaWrite for VersionedMsg {
                 u8::write(writer, &MESSAGE_VERSION_PREFIX)?;
                 V0Message::write(writer, message)
             }
+            solana_message::VersionedMessage::V1(_) => todo!(),
         }
     }
 }

@@ -28,6 +28,11 @@ use {
     solana_time_utils::timestamp,
     solana_tps_client::*,
     solana_transaction::Transaction,
+    /* TAO TODO - update sdk to merge v1::Transaction to Transaction
+     * better to make Transaction support v1::Message, instead of adding
+     * a new transaction type.
+    solana_transaction::v1::Transaction as TransactionV1,
+    // */
     spl_instruction_padding_interface::instruction::wrap_instruction,
     std::{
         collections::{HashSet, VecDeque},
@@ -651,6 +656,10 @@ fn transfer_with_compute_unit_price_and_padding(
     let from_pubkey = from_keypair.pubkey();
     let transfer_instruction = system_instruction::transfer(&from_pubkey, to, lamports);
     let instruction = if let Some(instruction_padding_config) = instruction_padding_config {
+        /* TAO TODO - can i hack wrap_instruction() with large
+         * `instruction_padding_config.data_size`? If can make it 4096 bytes
+         * without padding additional accounts, sigs and ixs, that'd be ideal
+        // */
         wrap_instruction(
             instruction_padding_config.program_id,
             transfer_instruction,
@@ -683,6 +692,17 @@ fn transfer_with_compute_unit_price_and_padding(
             ComputeBudgetInstruction::set_compute_unit_price(compute_unit_price),
         ])
     }
+    /* TAO TODO - to generate "large size Transfer Tx" here with sdk-transaction::Transaction that
+     * support V1::message
+    let mut message = Message::V1::new(&transfer_instruction, cb_ixs_replacements, Some(&from_pubkey));
+    // enlarge Transfer tx
+    message.max_accounts_to_64()
+           .max_ixs_to_64_with_large_data()
+           .max_signatures_to_12()
+           ;
+    // Transaction level API doesn't change, it supports V1::message seamlessly
+    Transaction::new(&[from_keypair], message, recent_blockhash)
+    // */
     let message = Message::new(&instructions, Some(&from_pubkey));
     Transaction::new(&[from_keypair], message, recent_blockhash)
 }

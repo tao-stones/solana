@@ -188,3 +188,18 @@ codegen-units = 1
 # we override the opt-level to 3 for the crate.
 [profile.dev.package.curve25519-dalek]
 opt-level = 3
+
+[patch.crates-io]
+# Using Gabe's txv1 sdk
+solana-address = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-hash = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-instruction = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-instruction-error = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-message = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+#solana-program-error = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-sanitize = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-signer = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-signature = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-transaction = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+solana-transaction-error = { git = "https://github.com/anza-xyz/solana-sdk", rev = "9fc71639ba5e3b8dae16ac28cab0b824c2d1f88f" }
+

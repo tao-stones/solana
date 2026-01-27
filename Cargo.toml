@@ -664,3 +664,16 @@ opt-level = 3
 [patch.crates-io]
 # for details, see https://github.com/anza-xyz/crossbeam/commit/fd279d707025f0e60951e429bf778b4813d1b6bf
 crossbeam-epoch = { git = "https://github.com/anza-xyz/crossbeam", rev = "fd279d707025f0e60951e429bf778b4813d1b6bf" }
+
+# Using SDK v1-tx branch: febo:v1-tx
+solana-address = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-hash = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-instruction = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-instruction-error = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-message = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-program-error = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-sanitize = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-signer = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-signature = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-transaction = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-transaction-error = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }

@@ -188,3 +188,16 @@ codegen-units = 1
 # we override the opt-level to 3 for the crate.
 [profile.dev.package.curve25519-dalek]
 opt-level = 3
+
+# Using SDK v1-tx branch: febo:v1-tx
+solana-address = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-hash = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-instruction = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-instruction-error = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-message = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-program-error = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-sanitize = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-signer = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-signature = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-transaction = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
+solana-transaction-error = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }

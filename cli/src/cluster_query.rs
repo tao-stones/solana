@@ -59,7 +59,7 @@ use {
     solana_stake_interface::{self as stake, state::StakeStateV2},
     solana_system_interface::{instruction as system_instruction, MAX_PERMITTED_DATA_LENGTH},
     solana_tpu_client::nonblocking::tpu_client::TpuClient,
-    solana_transaction::Transaction,
+    solana_transaction::{versioned::VersionedTransaction, Transaction},
     solana_transaction_status::{
         EncodableWithMeta, EncodedConfirmedTransactionWithStatusMeta, UiTransactionEncoding,
     },
@@ -1602,6 +1602,7 @@ where
         .await?;
         let mut tx = Transaction::new_unsigned(message);
         tx.try_sign(&config.signers, blockhash)?;
+        let tx: VersionedTransaction = tx.into();
 
         let timestamp = || {
             let micros = SystemTime::now()

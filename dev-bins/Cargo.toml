@@ -190,6 +190,7 @@ codegen-units = 1
 opt-level = 3
 
 # Using SDK v1-tx branch: febo:v1-tx
+[patch.crates-io]
 solana-address = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
 solana-hash = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }
 solana-instruction = { git = "https://github.com/febo/solana-sdk", branch = "v1-tx" }

@@ -48,7 +48,7 @@ reqwest = { workspace = true, features = ["blocking", "brotli", "deflate", "gzip
 semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-solana-account = "=3.4.0"
+solana-account = { workspace = true }
 solana-account-decoder = { workspace = true }
 solana-address-lookup-table-interface = { workspace = true }
 solana-bls-signatures = { workspace = true }
@@ -73,7 +73,7 @@ solana-keypair = "=3.1.0"
 solana-loader-v3-interface = { version = "=6.1.0", features = ["bincode"] }
 solana-loader-v4-interface = "=3.1.0"
 solana-loader-v4-program = { workspace = true }
-solana-message = "=3.0.1"
+solana-message = "=3.1.0"
 solana-native-token = "=3.0.0"
 solana-nonce = "=3.0.0"
 solana-offchain-message = { version = "=3.0.0", features = ["verify"] }
@@ -94,10 +94,10 @@ solana-signer = "=3.0.0"
 solana-slot-history = "=3.0.0"
 solana-stake-interface = "=2.0.2"
 solana-system-interface = { version = "=3.0", features = ["bincode"] }
-solana-sysvar = "=3.1.1"
+solana-sysvar = { workspace = true }
 solana-tps-client = { workspace = true }
 solana-tpu-client = { workspace = true, features = ["default"] }
-solana-transaction = "=3.0.2"
+solana-transaction = "=3.1.0"
 solana-transaction-error = "=3.0.0"
 solana-transaction-status = { workspace = true }
 solana-transaction-status-client-types = { workspace = true }

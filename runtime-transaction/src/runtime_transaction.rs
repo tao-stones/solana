@@ -14,7 +14,7 @@ use {
     core::ops::Deref,
     solana_compute_budget_instruction::compute_budget_instruction_details::*,
     solana_hash::Hash,
-    solana_message::{AccountKeys, TransactionSignatureDetails},
+    solana_message::{AccountKeys, TransactionSignatureDetails, v1::self},
     solana_pubkey::Pubkey,
     solana_signature::Signature,
     solana_svm_transaction::{

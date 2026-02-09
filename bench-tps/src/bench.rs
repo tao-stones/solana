@@ -18,7 +18,7 @@ use {
     solana_hash::Hash,
     solana_instruction::{AccountMeta, Instruction},
     solana_keypair::Keypair,
-    solana_message::Message,
+    solana_message::{Message, VersionedMessage, legacy, v0::self, v1::self as txv1},
     solana_metrics::{self, datapoint_info},
     solana_native_token::Sol,
     solana_pubkey::Pubkey,
@@ -684,8 +684,28 @@ fn transfer_with_compute_unit_price_and_padding(
         ])
     }
     // NOTE TAO - create v1 message and versioned_transaction here
+    let use_txv1 = false;
+    let versioned_message = if use_txv1 {
+    let message = v1::MessageBuilder::new();
+    /*
+        .required_signatures(1)
+        .lifetime_speciffier(recent_blockhash),
+        // if padding, need to add instruction_padding_config.program_id to the end of list
+        .accounts(vec![from_pubkey, to, system_program::id])
+        .priority_fee(0)
+        .compute_unit_limit(PADDED_TRANSFER_COMPUTE_UNIT)
+        .instruction(compiledInstruction...)
+        .build()
+        .unwrap();
+    // */
+    VersionedMessage::V1(message)
+    } else {
     let message = Message::new(&instructions, Some(&from_pubkey));
-    Transaction::new(&[from_keypair], message, recent_blockhash).into()
+    VersionedMessage::Legacy(message)
+    };
+    let transaction = VersionedTransaction::try_new(versioned_message, &[from_keypair]).unwrap();
+    println!("=== {:?}", transaction);
+    transaction
 }
 
 fn get_nonce_accounts<T: 'static + TpsClient + Send + Sync + ?Sized>(

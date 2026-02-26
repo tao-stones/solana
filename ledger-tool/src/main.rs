@@ -455,8 +455,8 @@ fn compute_slot_cost(
     let feature_set = FeatureSet::all_enabled();
     let reserved_account_keys = ReservedAccountKeys::new_all_activated();
 
-    let stop_use_static_simple_vote_tx_cost =
-        feature_set.is_active(&agave_feature_set::stop_use_static_simple_vote_tx_cost::ID);
+    let remove_simple_vote_from_cost_model =
+        feature_set.is_active(&agave_feature_set::remove_simple_vote_from_cost_model::ID);
     for entry in entries {
         num_transactions += entry.transactions.len();
         entry
@@ -481,7 +481,7 @@ fn compute_slot_cost(
                 num_programs += transaction.message().instructions().len();
 
                 let tx_cost = CostModel::calculate_cost(&transaction, &feature_set);
-                let result = cost_tracker.try_add(&tx_cost, stop_use_static_simple_vote_tx_cost);
+                let result = cost_tracker.try_add(&tx_cost, remove_simple_vote_from_cost_model);
                 if result.is_err() {
                     println!(
                         "Slot: {slot}, CostModel rejected transaction {transaction:?}, reason \

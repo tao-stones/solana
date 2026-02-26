@@ -86,6 +86,8 @@ pub enum Error {
     Serialize(#[from] wincode::WriteError),
     #[error("Shred not found, slot: {slot}, index: {index}")]
     ShredNotFound { slot: Slot, index: u64 },
+    #[error("Generated too many shreds for slot: {slot}")]
+    TooManyShreds { slot: Slot },
     #[error(transparent)]
     TransportError(#[from] solana_transaction_error::TransportError),
     #[error("Unknown last index, slot: {0}")]

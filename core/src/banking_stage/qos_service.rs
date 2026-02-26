@@ -106,48 +106,50 @@ impl QosService {
         transactions_costs: impl Iterator<Item = transaction::Result<TransactionCost<'a, Tx>>>,
         bank: &Bank,
     ) -> (Vec<transaction::Result<TransactionCost<'a, Tx>>>, usize) {
-        let remove_block_vote_cost_limit = bank
+        let stop_use_static_simple_vote_tx_cost = bank
             .feature_set
-            .is_active(&agave_feature_set::remove_block_vote_cost_limit::ID);
+            .is_active(&agave_feature_set::stop_use_static_simple_vote_tx_cost::ID);
         let mut cost_tracking_time = Measure::start("cost_tracking_time");
         let mut cost_tracker = bank.write_cost_tracker().unwrap();
         let mut num_included = 0;
         let select_results = transactions
             .zip(transactions_costs)
             .map(|(tx, cost)| match cost {
-                Ok(cost) => match cost_tracker.try_add(&cost, remove_block_vote_cost_limit) {
-                    Ok(UpdatedCosts {
-                        updated_block_cost,
-                        updated_costliest_account_cost,
-                    }) => {
-                        debug!(
-                            "slot {:?}, transaction {:?}, cost {:?}, fit into current block, \
-                             current block cost {}, updated costliest account cost {}",
-                            bank.slot(),
-                            tx,
-                            cost,
+                Ok(cost) => {
+                    match cost_tracker.try_add(&cost, stop_use_static_simple_vote_tx_cost) {
+                        Ok(UpdatedCosts {
                             updated_block_cost,
-                            updated_costliest_account_cost
-                        );
-                        self.metrics
-                            .stats
-                            .selected_txs_count
-                            .fetch_add(1, Ordering::Relaxed);
-                        num_included += 1;
-                        Ok(cost)
+                            updated_costliest_account_cost,
+                        }) => {
+                            debug!(
+                                "slot {:?}, transaction {:?}, cost {:?}, fit into current block, \
+                                 current block cost {}, updated costliest account cost {}",
+                                bank.slot(),
+                                tx,
+                                cost,
+                                updated_block_cost,
+                                updated_costliest_account_cost
+                            );
+                            self.metrics
+                                .stats
+                                .selected_txs_count
+                                .fetch_add(1, Ordering::Relaxed);
+                            num_included += 1;
+                            Ok(cost)
+                        }
+                        Err(e) => {
+                            debug!(
+                                "slot {:?}, transaction {:?}, cost {:?}, not fit into current \
+                                 block, '{:?}'",
+                                bank.slot(),
+                                tx,
+                                cost,
+                                e
+                            );
+                            Err(TransactionError::from(e))
+                        }
                     }
-                    Err(e) => {
-                        debug!(
-                            "slot {:?}, transaction {:?}, cost {:?}, not fit into current block, \
-                             '{:?}'",
-                            bank.slot(),
-                            tx,
-                            cost,
-                            e
-                        );
-                        Err(TransactionError::from(e))
-                    }
-                },
+                }
                 Err(e) => Err(e),
             })
             .collect();

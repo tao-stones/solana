@@ -350,13 +350,13 @@ fn check_block_cost_limits<Tx: TransactionWithMeta>(
     bank: &Bank,
     tx_costs: &[Option<TransactionCost<'_, Tx>>],
 ) -> Result<()> {
-    let remove_block_vote_cost_limit = bank
+    let stop_use_static_simple_vote_tx_cost = bank
         .feature_set
-        .is_active(&agave_feature_set::remove_block_vote_cost_limit::ID);
+        .is_active(&agave_feature_set::stop_use_static_simple_vote_tx_cost::ID);
     let mut cost_tracker = bank.write_cost_tracker().unwrap();
     for tx_cost in tx_costs.iter().flatten() {
         cost_tracker
-            .try_add(tx_cost, remove_block_vote_cost_limit)
+            .try_add(tx_cost, stop_use_static_simple_vote_tx_cost)
             .map_err(TransactionError::from)?;
     }
 

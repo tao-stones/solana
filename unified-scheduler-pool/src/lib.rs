@@ -1264,7 +1264,7 @@ impl TaskHandler for DefaultTaskHandler {
                 bank.write_cost_tracker().unwrap().try_add(
                     &cost,
                     bank.feature_set
-                        .is_active(&agave_feature_set::remove_block_vote_cost_limit::ID),
+                        .is_active(&agave_feature_set::stop_use_static_simple_vote_tx_cost::ID),
                 )?;
 
                 let RecordTransactionsSummary {

@@ -167,9 +167,9 @@ impl CostTracker {
     pub fn try_add(
         &mut self,
         tx_cost: &TransactionCost<impl TransactionWithMeta>,
-        remove_block_vote_cost_limit: bool,
+        stop_use_static_simple_vote_tx_cost: bool,
     ) -> Result<UpdatedCosts, CostTrackerError> {
-        self.would_fit(tx_cost, remove_block_vote_cost_limit)?;
+        self.would_fit(tx_cost, stop_use_static_simple_vote_tx_cost)?;
         let updated_costliest_account_cost = self.add_transaction_cost(tx_cost);
         Ok(UpdatedCosts {
             updated_block_cost: self.block_cost(),
@@ -310,11 +310,11 @@ impl CostTracker {
     fn would_fit(
         &self,
         tx_cost: &TransactionCost<impl TransactionWithMeta>,
-        remove_block_vote_cost_limit: bool,
+        stop_use_static_simple_vote_tx_cost: bool,
     ) -> Result<(), CostTrackerError> {
         let cost: u64 = tx_cost.sum();
 
-        if !remove_block_vote_cost_limit && tx_cost.is_simple_vote() {
+        if !stop_use_static_simple_vote_tx_cost && tx_cost.is_simple_vote() {
             // if vote transaction, check if it exceeds vote_transaction_limit
             if self.vote_cost.saturating_add(cost) > self.vote_cost_limit {
                 return Err(CostTrackerError::WouldExceedVoteMaxLimit);

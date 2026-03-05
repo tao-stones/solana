@@ -145,7 +145,23 @@ where
     ) -> TransportResult<()> {
         let wire_transactions = transactions
             .into_par_iter()
-            .map(|tx| bincode::serialize(&tx).expect("serialize Transaction in send_batch"))
+            .map(|tx| {
+                // TAO NOTE - what to expect clients to handle [win|bin]code serialize on different
+                // version transactions?
+                // For bench-tps, currently both RpcClient and TpuClient (here) are serializeing
+                // txv1 with bincode, packets received by validator failed to retrieve `129`
+                // version byte for txv1, then fail.
+                // Hack this one place for bench-tps for now, there are several places in
+                // RpcClient and TpuClient required adjustments.
+                match tx.version() {
+                    solana_transaction::versioned::TransactionVersion::Number(1) => {
+                        wincode::serialize(&tx).expect("serialize Transaction in send_batch")
+                    },
+                    _ => {
+                        bincode::serialize(&tx).expect("serialize Transaction in send_batch")
+                    }
+                }
+            })
             .collect::<Vec<_>>();
         self.invoke(
             self.tpu_client

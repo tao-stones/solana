@@ -85,6 +85,16 @@ impl std::convert::From<std::num::TryFromIntError> for PacketError {
 /// Caller must do packet.set_discard(true) if this returns false.
 #[must_use]
 fn verify_packet(packet: &mut PacketRefMut, reject_non_vote: bool) -> bool {
+
+    // TAO HACK - get_packet_offsets() doesn't how to handle txv1 yet. Can
+    // merge Andrew's PR to use TransactionView here; Then add txv1 support
+    // to TransactionView.
+    // For bench-tps, just hack it for now
+    let ver_txv1 = packet.data(..).unwrap()[0];
+    if ver_txv1 == 129 {
+        return true;
+    }
+
     // If this packet was already marked as discard, drop it
     if packet.meta().discard() {
         return false;

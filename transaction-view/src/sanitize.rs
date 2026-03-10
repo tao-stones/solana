@@ -16,7 +16,8 @@ pub(crate) fn sanitize(
         enable_static_instruction_limit,
         enable_instruction_accounts_limit,
     )?;
-    sanitize_address_table_lookups(view)
+    sanitize_address_table_lookups(view)?;
+    sanitize_transaction_config(view)
 }
 
 fn sanitize_signatures(view: &UnsanitizedTransactionView<impl TransactionData>) -> Result<()> {
@@ -117,6 +118,14 @@ fn sanitize_address_table_lookups(
         }
     }
 
+    Ok(())
+}
+
+fn sanitize_transaction_config(
+    view: &UnsanitizedTransactionView<impl TransactionData>,
+) -> Result<()> {
+    // NOTE: necessary to validate configured values here? Particularly requested-heap-size
+    // should be multiple of 1024?
     Ok(())
 }
 

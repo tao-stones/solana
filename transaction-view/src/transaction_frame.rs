@@ -1,7 +1,7 @@
 use {
     crate::{
         address_table_lookup_frame::{AddressTableLookupFrame, AddressTableLookupIterator},
-        bytes::advance_offset_for_type,
+        bytes::{advance_offset_for_array, advance_offset_for_type, read_byte, read_slice_data},
         instructions_frame::{InstructionsFrame, InstructionsIterator},
         message_header_frame::MessageHeaderFrame,
         result::{Result, TransactionViewError},
@@ -38,6 +38,12 @@ impl TransactionFrame {
     /// The `bytes` parameter must have no trailing data.
     pub(crate) fn try_new(bytes: &[u8]) -> Result<Self> {
         let mut offset = 0;
+
+        // HACK - branching v1 processing by Version Byte
+        if bytes[0] == 129 {
+            return Self::try_new_from_txv1(bytes);
+        }
+
         let signature = SignatureFrame::try_new(bytes, &mut offset)?;
         let message_header = MessageHeaderFrame::try_new(bytes, &mut offset)?;
         let static_account_keys = StaticAccountKeysFrame::try_new(bytes, &mut offset)?;
@@ -57,6 +63,7 @@ impl TransactionFrame {
                 total_readonly_lookup_accounts: 0,
             },
             TransactionVersion::V0 => AddressTableLookupFrame::try_new(bytes, &mut offset)?,
+            TransactionVersion::V1 => unreachable!("unexpected variant"),
         };
 
         // Verify that the entire transaction was parsed.
@@ -73,6 +80,93 @@ impl TransactionFrame {
             address_table_lookup,
             transaction_config_frame: TransactionConfigFrame::not_applicable(),
         })
+    }
+
+    fn try_new_from_txv1(bytes: &[u8]) -> Result<Self> {
+        let mut offset: usize = 0;
+
+        // message offset would be the first byte of txv1 packet, which is version byte
+        let message_offset = offset as u16;
+
+        let version = read_byte(bytes, &mut offset)?;
+        let version = match version {
+            129 => TransactionVersion::V1,
+            _ => return Err(TransactionViewError::ParseError),
+        };
+
+        let num_required_signatures = read_byte(bytes, &mut offset)?;
+        let num_readonly_signed_accounts = read_byte(bytes, &mut offset)?;
+        let num_readonly_unsigned_accounts = read_byte(bytes, &mut offset)?;
+
+        let transaction_config_mask_offset = offset;
+        let transaction_config_mask = u32::from_le_bytes(
+            unsafe { read_slice_data::<u8>(bytes, &mut offset, 4) }
+                .unwrap()
+                .try_into()
+                .unwrap(),
+        );
+
+        let recent_blockhash_offset = offset as u16;
+        advance_offset_for_type::<Hash>(bytes, &mut offset)?;
+
+        let num_instructions = read_byte(bytes, &mut offset)?;
+        let num_addresses = read_byte(bytes, &mut offset)?;
+        // the offset to teh first address in transaction
+        let addresses_offset = offset as u16;
+        advance_offset_for_array::<Pubkey>(bytes, &mut offset, u16::from(num_addresses))?;
+
+        // config value slots: one 4-byte slot per set bit in mask
+        let transaction_config_frame = TransactionConfigFrame::try_new(
+            bytes,
+            transaction_config_mask_offset,
+            transaction_config_mask,
+            &mut offset,
+        )?;
+
+        let instructions = InstructionsFrame::try_new_for_v1(bytes, &mut offset, num_instructions)?;
+
+        let signatures_offset = offset as u16;
+
+        advance_offset_for_array::<Signature>(
+            bytes,
+            &mut offset,
+            u16::from(num_required_signatures),
+        )?;
+
+        // Verify that the entire transaction was parsed.
+        if offset != bytes.len() {
+            return Err(TransactionViewError::ParseError);
+        }
+
+        let frame = Self {
+            signature: SignatureFrame {
+                num_signatures: num_required_signatures, // always matches num_required_sig in txv1
+                offset: signatures_offset,
+            },
+            message_header: MessageHeaderFrame {
+                offset: message_offset,
+                version,
+                num_required_signatures,
+                num_readonly_signed_accounts,
+                num_readonly_unsigned_accounts,
+            },
+            static_account_keys: StaticAccountKeysFrame {
+                num_static_accounts: num_addresses, // always static accounts in txv1
+                offset: addresses_offset,
+            },
+            recent_blockhash_offset,
+            instructions,
+            // Don't have one in txv1
+            address_table_lookup: AddressTableLookupFrame {
+                num_address_table_lookups: 0,
+                offset: 0,
+                total_writable_lookup_accounts: 0,
+                total_readonly_lookup_accounts: 0,
+            },
+            transaction_config_frame,
+        };
+
+        Ok(frame)
     }
 
     /// Return the number of signatures in the transaction.

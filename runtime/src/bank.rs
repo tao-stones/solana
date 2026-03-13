@@ -5004,7 +5004,8 @@ impl Bank {
             .is_active(&agave_feature_set::limit_instruction_accounts::id());
 
         // Discard v1 transactions until support is added.
-        if tx.version() == TransactionVersion::Number(1) {
+        let support_txv1 = true;
+        if !support_txv1 && tx.version() == TransactionVersion::Number(1) {
             return Err(TransactionError::UnsupportedVersion);
         }
 

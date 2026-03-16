@@ -2,6 +2,7 @@
 use solana_compute_budget_instruction::compute_budget_instruction_details::ComputeBudgetInstructionDetails;
 use {
     crate::block_cost_limits, solana_pubkey::Pubkey,
+    solana_runtime_transaction::transaction_config_source::TransactionConfigSource,
     solana_runtime_transaction::transaction_meta::StaticMeta,
     solana_svm_transaction::svm_message::SVMMessage,
 };
@@ -301,6 +302,10 @@ impl solana_runtime_transaction::transaction_meta::StaticMeta for WritableKeysTr
 
     fn instruction_data_len(&self) -> u16 {
         unimplemented!("WritableKeysTransaction::instruction_data_len")
+    }
+
+    fn transaction_config_source(&self) -> &TransactionConfigSource {
+        unimplemented!("WritableKeysTransaction::transaction_config_source")
     }
 }
 

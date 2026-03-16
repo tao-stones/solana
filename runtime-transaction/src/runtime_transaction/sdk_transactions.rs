@@ -2,10 +2,12 @@ use {
     super::{ComputeBudgetInstructionDetails, RuntimeTransaction},
     crate::{
         instruction_meta::InstructionMeta,
+        transaction_config_source::{TransactionConfigSource, TransactionConfigValues},
         transaction_meta::{StaticMeta, TransactionMeta},
         transaction_with_meta::TransactionWithMeta,
     },
-    solana_message::{AddressLoader, TransactionSignatureDetails},
+    solana_message::{AddressLoader, TransactionSignatureDetails, VersionedMessage},
+    solana_program_entrypoint::HEAP_LENGTH,
     solana_pubkey::Pubkey,
     solana_svm_transaction::instruction::SVMInstruction,
     solana_transaction::{
@@ -57,6 +59,21 @@ impl RuntimeTransaction<SanitizedVersionedTransaction> {
                 .program_instructions_iter()
                 .map(|(program_id, ix)| (program_id, SVMInstruction::from(ix))),
         )?;
+        let transaction_config_source =
+            if let VersionedMessage::V1(msg) = &sanitized_versioned_tx.get_message().message {
+                // NOTE: sanitized v1::message must have default or validate `config` values.
+                TransactionConfigSource::V1(TransactionConfigValues {
+                    priority_fee_lamports: msg.config.priority_fee.unwrap_or(0),
+                    compute_unit_limit: msg.config.compute_unit_limit.unwrap_or(0),
+                    loaded_accounts_data_size_limit: msg
+                        .config
+                        .loaded_accounts_data_size_limit
+                        .unwrap_or(0),
+                    requested_heap_size: msg.config.heap_size.unwrap_or(HEAP_LENGTH as u32),
+                })
+            } else {
+                TransactionConfigSource::LegacyAndV0(compute_budget_instruction_details.clone())
+            };
 
         Ok(Self {
             transaction: sanitized_versioned_tx,
@@ -66,6 +83,7 @@ impl RuntimeTransaction<SanitizedVersionedTransaction> {
                 signature_details,
                 compute_budget_instruction_details,
                 instruction_data_len,
+                transaction_config_source,
             },
         })
     }

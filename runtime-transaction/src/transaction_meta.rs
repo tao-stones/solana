@@ -12,6 +12,7 @@
 //! RuntimeTransaction types, not the TransactionMeta itself.
 //!
 use {
+    crate::transaction_config_source::TransactionConfigSource,
     solana_compute_budget_instruction::compute_budget_instruction_details::ComputeBudgetInstructionDetails,
     solana_hash::Hash, solana_message::TransactionSignatureDetails,
 };
@@ -24,6 +25,7 @@ pub trait StaticMeta {
     fn signature_details(&self) -> &TransactionSignatureDetails;
     fn compute_budget_instruction_details(&self) -> &ComputeBudgetInstructionDetails;
     fn instruction_data_len(&self) -> u16;
+    fn transaction_config_source(&self) -> &TransactionConfigSource;
 }
 
 /// Statically loaded meta is a supertrait of Dynamically loaded meta, when
@@ -41,4 +43,5 @@ pub struct TransactionMeta {
     pub(crate) signature_details: TransactionSignatureDetails,
     pub(crate) compute_budget_instruction_details: ComputeBudgetInstructionDetails,
     pub(crate) instruction_data_len: u16,
+    pub(crate) transaction_config_source: TransactionConfigSource,
 }

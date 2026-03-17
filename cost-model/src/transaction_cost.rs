@@ -1,5 +1,3 @@
-#[cfg(feature = "dev-context-only-utils")]
-use solana_compute_budget_instruction::compute_budget_instruction_details::ComputeBudgetInstructionDetails;
 use {
     crate::block_cost_limits, solana_pubkey::Pubkey,
     solana_runtime_transaction::transaction_config_source::TransactionConfigSource,
@@ -294,10 +292,6 @@ impl solana_runtime_transaction::transaction_meta::StaticMeta for WritableKeysTr
         const DUMMY: solana_message::TransactionSignatureDetails =
             solana_message::TransactionSignatureDetails::new(0, 0, 0, 0);
         &DUMMY
-    }
-
-    fn compute_budget_instruction_details(&self) -> &ComputeBudgetInstructionDetails {
-        unimplemented!("WritableKeysTransaction::compute_budget_instruction_details")
     }
 
     fn instruction_data_len(&self) -> u16 {

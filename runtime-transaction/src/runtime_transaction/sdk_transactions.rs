@@ -72,7 +72,7 @@ impl RuntimeTransaction<SanitizedVersionedTransaction> {
                     requested_heap_size: msg.config.heap_size.unwrap_or(HEAP_LENGTH as u32),
                 })
             } else {
-                TransactionConfigSource::LegacyAndV0(compute_budget_instruction_details.clone())
+                TransactionConfigSource::LegacyAndV0(compute_budget_instruction_details)
             };
 
         Ok(Self {
@@ -81,7 +81,6 @@ impl RuntimeTransaction<SanitizedVersionedTransaction> {
                 message_hash,
                 is_simple_vote_transaction: is_simple_vote_tx,
                 signature_details,
-                compute_budget_instruction_details,
                 instruction_data_len,
                 transaction_config_source,
             },
@@ -371,7 +370,7 @@ mod tests {
 
         for feature_set in [FeatureSet::default(), FeatureSet::all_enabled()] {
             let compute_budget_limits = runtime_transaction_static
-                .compute_budget_instruction_details()
+                .transaction_config_source()
                 .sanitize_and_convert_to_compute_budget_limits(&feature_set)
                 .unwrap();
             assert_eq!(compute_unit_limit, compute_budget_limits.compute_unit_limit);

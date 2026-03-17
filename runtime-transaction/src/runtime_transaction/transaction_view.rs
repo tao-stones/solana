@@ -102,14 +102,13 @@ where
                 requested_heap_size: transaction_config_view.requested_heap_size(),
             })
         } else {
-            TransactionConfigSource::LegacyAndV0(compute_budget_instruction_details.clone())
+            TransactionConfigSource::LegacyAndV0(compute_budget_instruction_details)
         };
 
     Ok(TransactionMeta {
         message_hash,
         is_simple_vote_transaction: is_simple_vote_tx,
         signature_details,
-        compute_budget_instruction_details,
         instruction_data_len,
         transaction_config_source,
     })

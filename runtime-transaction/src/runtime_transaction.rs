@@ -56,9 +56,6 @@ impl<T> StaticMeta for RuntimeTransaction<T> {
     fn signature_details(&self) -> &TransactionSignatureDetails {
         &self.meta.signature_details
     }
-    fn compute_budget_instruction_details(&self) -> &ComputeBudgetInstructionDetails {
-        &self.meta.compute_budget_instruction_details
-    }
     fn instruction_data_len(&self) -> u16 {
         self.meta.instruction_data_len
     }

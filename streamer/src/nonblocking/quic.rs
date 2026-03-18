@@ -17,7 +17,7 @@ use {
     smallvec::SmallVec,
     solana_keypair::Keypair,
     solana_net_utils::token_bucket::TokenBucket,
-    solana_packet::{Meta, PACKET_DATA_SIZE},
+    solana_packet::{Meta, /*PACKET_DATA_SIZE*/},
     solana_perf::packet::{BytesPacket, PacketBatch},
     solana_pubkey::Pubkey,
     solana_tls_utils::get_pubkey_from_tls_certificate,
@@ -48,6 +48,8 @@ use {
     },
     tokio_util::{sync::CancellationToken, task::TaskTracker},
 };
+
+pub const PACKET_DATA_SIZE: usize = 4096;
 
 pub const DEFAULT_WAIT_FOR_CHUNK_TIMEOUT: Duration = Duration::from_secs(2);
 

@@ -97,7 +97,7 @@ impl Bank {
             .zip(lock_results)
             .map(|(tx, lock_result)| match lock_result {
                 Err(err) => Err(err.clone()),
-                Ok(()) if tx.borrow().version() == TransactionVersion::Number(1) => {
+                Ok(()) if false && tx.borrow().version() == TransactionVersion::Number(1) => {
                     Err(TransactionError::UnsupportedVersion)
                 }
                 Ok(()) => Ok(()),

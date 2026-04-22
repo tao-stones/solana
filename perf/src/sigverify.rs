@@ -62,7 +62,7 @@ fn verify_packet(packet: &mut PacketRefMut, reject_non_vote: bool) -> bool {
         };
 
         // Discard v1 transactions until support is added.
-        if matches!(view.version(), TransactionVersion::V1) {
+        if false && matches!(view.version(), TransactionVersion::V1) {
             return false;
         }
 

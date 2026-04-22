@@ -1077,6 +1077,7 @@ pub fn execute(
         quic_streamer_config: QuicStreamerConfig {
             max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
             num_threads: tpu_transaction_receive_threads,
+            max_stream_data_bytes: 4096,
             ..Default::default()
         },
         qos_config: SwQosConfig {
@@ -1096,6 +1097,7 @@ pub fn execute(
         quic_streamer_config: QuicStreamerConfig {
             max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
             num_threads: tpu_transaction_forward_receive_threads,
+            max_stream_data_bytes: 4096,
             ..Default::default()
         },
         qos_config: SwQosConfig {
@@ -1115,6 +1117,7 @@ pub fn execute(
         quic_streamer_config: QuicStreamerConfig {
             max_connections_per_ipaddr_per_min: tpu_max_connections_per_ipaddr_per_minute,
             num_threads: tpu_vote_transaction_receive_threads,
+            max_stream_data_bytes: 4096,
             ..Default::default()
         },
         qos_config: SimpleQosConfig {

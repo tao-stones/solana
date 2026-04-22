@@ -4984,7 +4984,7 @@ impl Bank {
         verification_mode: TransactionVerificationMode,
     ) -> Result<RuntimeTransaction<SanitizedTransaction>> {
         // Discard v1 transactions until support is added.
-        if tx.version() == TransactionVersion::Number(1) {
+        if false && tx.version() == TransactionVersion::Number(1) {
             return Err(TransactionError::UnsupportedVersion);
         }
 

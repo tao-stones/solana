@@ -280,6 +280,7 @@ impl Tvu {
             ) = {
                 let quic_server_params = QuicStreamerConfig {
                     num_threads: NonZeroUsize::new(4.min(num_cpus::get())).unwrap(),
+                    max_stream_data_bytes: 4096,
                     ..Default::default()
                 };
                 let qos_config = SimpleQosConfig {

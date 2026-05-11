@@ -19,7 +19,7 @@ use {
     crossbeam_channel::{Receiver, Sender},
     solana_cost_model::block_cost_limits::MAX_BLOCK_UNITS,
     solana_runtime_transaction::transaction_with_meta::TransactionWithMeta,
-    std::num::Saturating,
+    std::{num::Saturating, time::Instant},
 };
 
 pub(crate) struct GreedySchedulerConfig {
@@ -114,6 +114,9 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for GreedyScheduler<Tx> {
         let mut num_sent: usize = 0;
         let mut num_unschedulable_conflicts: usize = 0;
         let mut num_unschedulable_threads: usize = 0;
+        let mut buffered_to_scheduled_us = 0u64;
+        let mut buffered_to_scheduled_us_max = 0u64;
+        let schedule_start_time = Instant::now();
 
         while budget > 0
             && num_scanned < self.config.max_scanned_transactions_per_scheduling_pass
@@ -159,14 +162,23 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for GreedyScheduler<Tx> {
                     thread_id,
                     transaction,
                     max_age,
+                    received_time,
                     cost,
                 }) => {
                     num_scheduled += 1;
+                    let time_to_schedule_us = duration_as_us(
+                        schedule_start_time.saturating_duration_since(received_time),
+                    );
+                    buffered_to_scheduled_us =
+                        buffered_to_scheduled_us.saturating_add(time_to_schedule_us);
+                    buffered_to_scheduled_us_max =
+                        buffered_to_scheduled_us_max.max(time_to_schedule_us);
                     self.common.batches.add_transaction_to_batch(
                         thread_id,
                         id.id,
                         transaction,
                         max_age,
+                        received_time,
                         cost,
                     );
                     budget = budget.saturating_sub(cost);
@@ -209,6 +221,8 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for GreedyScheduler<Tx> {
             num_scheduled,
             num_unschedulable_conflicts,
             num_unschedulable_threads,
+            buffered_to_scheduled_us,
+            buffered_to_scheduled_us_max,
         })
     }
 
@@ -250,6 +264,7 @@ fn try_schedule_transaction<Tx: TransactionWithMeta>(
         }
     };
 
+    let received_time = transaction_state.received_time();
     let (transaction, max_age) = transaction_state.take_transaction_for_scheduling();
     let cost = transaction_state.cost();
 
@@ -257,8 +272,13 @@ fn try_schedule_transaction<Tx: TransactionWithMeta>(
         thread_id,
         transaction,
         max_age,
+        received_time,
         cost,
     })
+}
+
+fn duration_as_us(duration: std::time::Duration) -> u64 {
+    duration.as_micros() as u64
 }
 
 #[cfg(test)]

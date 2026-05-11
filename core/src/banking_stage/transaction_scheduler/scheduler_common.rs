@@ -12,12 +12,14 @@ use {
     crossbeam_channel::{Receiver, Sender, TryRecvError},
     itertools::izip,
     solana_runtime_transaction::transaction_with_meta::TransactionWithMeta,
+    std::time::Instant,
 };
 
 pub struct Batches<Tx> {
     ids: Vec<Vec<TransactionId>>,
     transactions: Vec<Vec<Tx>>,
     max_ages: Vec<Vec<MaxAge>>,
+    transaction_received_times: Vec<Vec<Instant>>,
     total_cus: Vec<u64>,
     target_num_transactions_per_batch: usize,
 }
@@ -37,6 +39,7 @@ impl<Tx> Batches<Tx> {
             ids: make_vecs(num_threads, target_num_transactions_per_batch),
             transactions: make_vecs(num_threads, target_num_transactions_per_batch),
             max_ages: make_vecs(num_threads, target_num_transactions_per_batch),
+            transaction_received_times: make_vecs(num_threads, target_num_transactions_per_batch),
             total_cus: vec![0; num_threads],
             target_num_transactions_per_batch,
         }
@@ -47,6 +50,10 @@ impl<Tx> Batches<Tx> {
         self.ids.iter().all(|ids| ids.is_empty())
             && self.transactions.iter().all(|txs| txs.is_empty())
             && self.max_ages.iter().all(|max_ages| max_ages.is_empty())
+            && self
+                .transaction_received_times
+                .iter()
+                .all(|received_times| received_times.is_empty())
             && self.total_cus.iter().all(|&cus| cus == 0)
     }
 
@@ -64,18 +71,20 @@ impl<Tx> Batches<Tx> {
         transaction_id: TransactionId,
         transaction: Tx,
         max_age: MaxAge,
+        transaction_received_time: Instant,
         cus: u64,
     ) {
         self.ids[thread_id].push(transaction_id);
         self.transactions[thread_id].push(transaction);
         self.max_ages[thread_id].push(max_age);
+        self.transaction_received_times[thread_id].push(transaction_received_time);
         self.total_cus[thread_id] += cus;
     }
 
     pub fn take_batch(
         &mut self,
         thread_id: ThreadId,
-    ) -> (Vec<TransactionId>, Vec<Tx>, Vec<MaxAge>, u64) {
+    ) -> (Vec<TransactionId>, Vec<Tx>, Vec<MaxAge>, Vec<Instant>, u64) {
         (
             core::mem::replace(
                 &mut self.ids[thread_id],
@@ -89,6 +98,10 @@ impl<Tx> Batches<Tx> {
                 &mut self.max_ages[thread_id],
                 Vec::with_capacity(self.target_num_transactions_per_batch),
             ),
+            core::mem::replace(
+                &mut self.transaction_received_times[thread_id],
+                Vec::with_capacity(self.target_num_transactions_per_batch),
+            ),
             core::mem::replace(&mut self.total_cus[thread_id], 0),
         )
     }
@@ -99,6 +112,7 @@ pub struct TransactionSchedulingInfo<Tx> {
     pub thread_id: ThreadId,
     pub transaction: Tx,
     pub max_age: MaxAge,
+    pub received_time: Instant,
     pub cost: u64,
 }
 
@@ -181,7 +195,8 @@ impl<Tx> SchedulingCommon<Tx> {
             return Ok(0);
         }
 
-        let (ids, transactions, max_ages, total_cus) = self.batches.take_batch(thread_index);
+        let (ids, transactions, max_ages, transaction_received_times, total_cus) =
+            self.batches.take_batch(thread_index);
 
         let batch_id = self
             .in_flight_tracker
@@ -193,6 +208,7 @@ impl<Tx> SchedulingCommon<Tx> {
             ids,
             transactions,
             max_ages,
+            transaction_received_times,
         };
         self.consume_work_senders[thread_index]
             .send(work)
@@ -225,6 +241,7 @@ impl<Tx: TransactionWithMeta> SchedulingCommon<Tx> {
                         ids,
                         transactions,
                         max_ages: _,
+                        transaction_received_times: _,
                     },
                 retryable_indexes,
             }) => {
@@ -339,10 +356,9 @@ mod tests {
         thread_id: ThreadId,
     ) {
         let tx_id = container.pop().unwrap();
-        let (transaction, max_age) = container
-            .get_mut_transaction_state(tx_id.id)
-            .unwrap()
-            .take_transaction_for_scheduling();
+        let transaction_state = container.get_mut_transaction_state(tx_id.id).unwrap();
+        let received_time = transaction_state.received_time();
+        let (transaction, max_age) = transaction_state.take_transaction_for_scheduling();
 
         let account_keys = transaction.account_keys();
         let write_account_locks = account_keys
@@ -368,6 +384,7 @@ mod tests {
             tx_id.id,
             transaction,
             max_age,
+            received_time,
             DUMMY_COST,
         );
     }

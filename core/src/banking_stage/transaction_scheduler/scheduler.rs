@@ -58,4 +58,8 @@ pub(crate) struct SchedulingSummary {
     pub num_unschedulable_conflicts: usize,
     /// Number of transactions that were skipped due to thread capacity.
     pub num_unschedulable_threads: usize,
+    /// Sum of transaction time from BankingStage buffering to scheduling.
+    pub buffered_to_scheduled_us: u64,
+    /// Max transaction time from BankingStage buffering to scheduling.
+    pub buffered_to_scheduled_us_max: u64,
 }

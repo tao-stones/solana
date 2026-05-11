@@ -350,6 +350,7 @@ impl TransactionViewReceiveAndBuffer {
                             transaction_account_lock_limit,
                             enable_instruction_accounts_limit,
                             &self.filter_keys,
+                            start,
                         ) {
                             Ok(state) => Ok(state),
                             Err(
@@ -416,6 +417,7 @@ impl TransactionViewReceiveAndBuffer {
         transaction_account_lock_limit: usize,
         enable_instruction_accounts_limit: bool,
         filter_keys: &HashSet<Pubkey>,
+        received_time: Instant,
     ) -> Result<TransactionViewState, PacketHandlingError> {
         let (view, deactivation_slot) = translate_to_runtime_view(
             bytes,
@@ -443,7 +445,13 @@ impl TransactionViewReceiveAndBuffer {
         let (priority, cost) =
             calculate_priority_and_cost(&view, &transaction_configuration, working_bank);
 
-        Ok(TransactionState::new(view, max_age, priority, cost))
+        Ok(TransactionState::new(
+            view,
+            max_age,
+            priority,
+            cost,
+            received_time,
+        ))
     }
 }
 

@@ -245,6 +245,11 @@ where
 
                 self.timing_metrics.update(|timing_metrics| {
                     timing_metrics.schedule_time_us += schedule_time_us;
+                    timing_metrics.buffered_to_scheduled_us +=
+                        scheduling_summary.buffered_to_scheduled_us;
+                    timing_metrics.buffered_to_scheduled_us_max = timing_metrics
+                        .buffered_to_scheduled_us_max
+                        .max(scheduling_summary.buffered_to_scheduled_us_max);
                 });
                 self.scheduling_details.update(&scheduling_summary);
 
@@ -647,6 +652,7 @@ mod tests {
                     ids: vec![],
                     transactions: vec![],
                     max_ages: vec![],
+                    transaction_received_times: vec![],
                 },
                 retryable_indexes: vec![],
             })

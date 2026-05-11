@@ -301,6 +301,10 @@ pub struct SchedulerTimingMetricsInner {
     pub clean_time_us: Saturating<u64>,
     /// Time spent receiving completed transactions.
     pub receive_completed_time_us: Saturating<u64>,
+    /// Sum of transaction time from BankingStage buffering to scheduling.
+    pub buffered_to_scheduled_us: Saturating<u64>,
+    /// Max transaction time from BankingStage buffering to scheduling.
+    pub buffered_to_scheduled_us_max: u64,
 }
 
 impl IntervalSchedulerTimingMetrics {
@@ -339,6 +343,8 @@ impl SchedulerTimingMetricsInner {
             clear_time_us: Saturating(clear_time_us),
             clean_time_us: Saturating(clean_time_us),
             receive_completed_time_us: Saturating(receive_completed_time_us),
+            buffered_to_scheduled_us: Saturating(buffered_to_scheduled_us),
+            buffered_to_scheduled_us_max,
         } = self;
         let mut datapoint = create_datapoint!(
             @point name,
@@ -351,6 +357,16 @@ impl SchedulerTimingMetricsInner {
             (
                 "receive_completed_time_us",
                 receive_completed_time_us,
+                i64
+            ),
+            (
+                "buffered_to_scheduled_us",
+                buffered_to_scheduled_us,
+                i64
+            ),
+            (
+                "buffered_to_scheduled_us_max",
+                buffered_to_scheduled_us_max,
                 i64
             )
         );
@@ -368,6 +384,8 @@ impl SchedulerTimingMetricsInner {
         self.clear_time_us = Saturating(0);
         self.clean_time_us = Saturating(0);
         self.receive_completed_time_us = Saturating(0);
+        self.buffered_to_scheduled_us = Saturating(0);
+        self.buffered_to_scheduled_us_max = 0;
     }
 }
 

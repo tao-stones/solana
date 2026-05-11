@@ -1,4 +1,4 @@
-use crate::banking_stage::scheduler_messages::MaxAge;
+use {crate::banking_stage::scheduler_messages::MaxAge, std::time::Instant};
 
 /// TransactionState is used to track the state of a transaction in the transaction scheduler
 /// and banking stage as a whole.
@@ -20,16 +20,25 @@ pub(crate) struct TransactionState<Tx> {
     priority: u64,
     /// Estimated cost of the transaction.
     cost: u64,
+    /// Time when BankingStage first buffered this transaction.
+    received_time: Instant,
 }
 
 impl<Tx> TransactionState<Tx> {
     /// Creates a new `TransactionState` in the `Unprocessed` state.
-    pub(crate) fn new(transaction: Tx, max_age: MaxAge, priority: u64, cost: u64) -> Self {
+    pub(crate) fn new(
+        transaction: Tx,
+        max_age: MaxAge,
+        priority: u64,
+        cost: u64,
+        received_time: Instant,
+    ) -> Self {
         Self {
             transaction: Some(transaction),
             max_age,
             priority,
             cost,
+            received_time,
         }
     }
 
@@ -43,6 +52,11 @@ impl<Tx> TransactionState<Tx> {
     /// Return the cost of the transaction.
     pub(crate) fn cost(&self) -> u64 {
         self.cost
+    }
+
+    /// Return the time when BankingStage first buffered the transaction.
+    pub(crate) fn received_time(&self) -> Instant {
+        self.received_time
     }
 
     /// Intended to be called when a transaction is scheduled. This method
@@ -112,6 +126,7 @@ mod tests {
             MaxAge::MAX,
             compute_unit_price,
             TEST_TRANSACTION_COST,
+            Instant::now(),
         )
     }
 
@@ -150,6 +165,15 @@ mod tests {
         assert!(transaction_state.transaction.is_none());
         transaction_state.retry_transaction(transaction);
         assert!(transaction_state.transaction.is_some());
+    }
+
+    #[test]
+    fn test_received_time_preserved_on_retry() {
+        let mut transaction_state = create_transaction_state(0);
+        let received_time = transaction_state.received_time();
+        let (transaction, _max_age) = transaction_state.take_transaction_for_scheduling();
+        transaction_state.retry_transaction(transaction);
+        assert_eq!(transaction_state.received_time(), received_time);
     }
 
     #[test]

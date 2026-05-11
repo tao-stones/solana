@@ -116,6 +116,12 @@ impl<Tx: TransactionWithMeta> ConsumeWorker<Tx> {
             .count_metrics
             .num_messages_processed
             .fetch_add(1, Ordering::Relaxed);
+        debug_assert_eq!(
+            work.transactions.len(),
+            work.transaction_received_times.len()
+        );
+        self.metrics
+            .update_buffered_to_processing_time(&work.transaction_received_times, Instant::now());
 
         let output = self.consumer.process_and_record_aged_transactions(
             bank,
@@ -2331,6 +2337,32 @@ impl ConsumeWorkerMetrics {
         );
     }
 
+    fn update_buffered_to_processing_time(
+        &self,
+        transaction_received_times: &[Instant],
+        processing_start_time: Instant,
+    ) {
+        let (total_us, max_us) =
+            transaction_received_times
+                .iter()
+                .fold((0u64, 0u64), |(total, max), received_time| {
+                    let elapsed_us = processing_start_time
+                        .saturating_duration_since(*received_time)
+                        .as_micros() as u64;
+                    (total.saturating_add(elapsed_us), max.max(elapsed_us))
+                });
+
+        self.timing_metrics
+            .buffered_to_processing_us
+            .fetch_add(total_us, Ordering::Relaxed);
+        self.timing_metrics
+            .buffered_to_processing_us_max
+            .fetch_max(max_us, Ordering::Relaxed);
+        self.timing_metrics
+            .buffered_to_processing_count
+            .fetch_add(transaction_received_times.len() as u64, Ordering::Relaxed);
+    }
+
     fn update_on_execute_and_commit_transactions_output(
         &self,
         ExecuteAndCommitTransactionsOutput {
@@ -2574,6 +2606,9 @@ struct ConsumeWorkerTimingMetrics {
     load_execute_us: AtomicU64,
     load_execute_us_min: AtomicU64,
     load_execute_us_max: AtomicU64,
+    buffered_to_processing_us: AtomicU64,
+    buffered_to_processing_us_max: AtomicU64,
+    buffered_to_processing_count: AtomicU64,
     freeze_lock_us: AtomicU64,
     record_us: AtomicU64,
     commit_us: AtomicU64,
@@ -2604,6 +2639,23 @@ impl ConsumeWorkerTimingMetrics {
             (
                 "load_execute_us_max",
                 self.load_execute_us_max.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "buffered_to_processing_us",
+                self.buffered_to_processing_us.swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "buffered_to_processing_us_max",
+                self.buffered_to_processing_us_max
+                    .swap(0, Ordering::Relaxed),
+                i64
+            ),
+            (
+                "buffered_to_processing_count",
+                self.buffered_to_processing_count
+                    .swap(0, Ordering::Relaxed),
                 i64
             ),
             (
@@ -2884,6 +2936,10 @@ mod tests {
         )
     }
 
+    fn transaction_received_times(count: usize) -> Vec<Instant> {
+        vec![Instant::now(); count]
+    }
+
     #[test]
     fn test_worker_consume_no_bank() {
         let (test_frame, worker) = setup_test_frame();
@@ -2916,6 +2972,7 @@ mod tests {
             ids: vec![id],
             transactions,
             max_ages: vec![max_age],
+            transaction_received_times: transaction_received_times(1),
         };
         consume_sender.send(work).unwrap();
         let consumed = consumed_receiver.recv().unwrap();
@@ -2961,6 +3018,7 @@ mod tests {
                         sanitized_epoch: bank.epoch(),
                         alt_invalidation_slot: bank.slot(),
                     }],
+                    transaction_received_times: transaction_received_times(1),
                 })
                 .unwrap();
         }
@@ -3024,6 +3082,7 @@ mod tests {
             ids: vec![id],
             transactions,
             max_ages: vec![max_age],
+            transaction_received_times: transaction_received_times(1),
         };
         consume_sender.send(work).unwrap();
         let consumed = consumed_receiver.recv().unwrap();
@@ -3079,6 +3138,7 @@ mod tests {
                 ids: vec![id1, id2],
                 transactions: txs,
                 max_ages: vec![max_age, max_age],
+                transaction_received_times: transaction_received_times(2),
             })
             .unwrap();
 
@@ -3145,6 +3205,7 @@ mod tests {
                 ids: vec![id1],
                 transactions: txs1,
                 max_ages: vec![max_age],
+                transaction_received_times: transaction_received_times(1),
             })
             .unwrap();
 
@@ -3154,6 +3215,7 @@ mod tests {
                 ids: vec![id2],
                 transactions: txs2,
                 max_ages: vec![max_age],
+                transaction_received_times: transaction_received_times(1),
             })
             .unwrap();
         let consumed = consumed_receiver.recv().unwrap();
@@ -3297,6 +3359,7 @@ mod tests {
                         alt_invalidation_slot: bank.slot() + 1,
                     },
                 ],
+                transaction_received_times: transaction_received_times(6),
             })
             .unwrap();
 

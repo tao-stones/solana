@@ -1,7 +1,7 @@
 use {
     crate::banking_stage::consumer::RetryableIndex,
     solana_clock::{Epoch, Slot},
-    std::fmt::Display,
+    std::{fmt::Display, time::Instant},
 };
 
 /// A unique identifier for a transaction batch.
@@ -43,6 +43,7 @@ pub struct ConsumeWork<Tx> {
     pub ids: Vec<TransactionId>,
     pub transactions: Vec<Tx>,
     pub max_ages: Vec<MaxAge>,
+    pub transaction_received_times: Vec<Instant>,
 }
 
 /// Message: [Worker -> Scheduler]

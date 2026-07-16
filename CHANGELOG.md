@@ -25,6 +25,9 @@ Release channels have their own copy of this changelog:
 * `--disable-banking-trace` is now deprecated and a no-op (banking trace is disabled by
   default). The flag is still accepted for backward compatibility.
 #### Changes
+* External scheduler execution responses now report `PARTIAL_BATCH_CANCELLED` for
+  `CommitCancelled` errors in non-all-or-nothing batches. All-or-nothing batches continue to use
+  `ALL_OR_NOTHING_BATCH_FAILURE`.
 ### SDK
 #### Breaking
 * solana-program-test: syscall getters (e.g. `Rent::get()`, `Clock::get()`) and `solana_sysvar::get_sysvar()` now return

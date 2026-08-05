@@ -29,13 +29,8 @@ pub(crate) fn calculate<'a>(
     instructions: impl Iterator<Item = (&'a Pubkey, SVMInstruction<'a>)>,
     feature_set: &FeatureSet,
 ) -> u64 {
-    // NOTE when bank feature gate of track wigth actual accounts_data_size_delta lands,
-    // use the feature gate here:
-    // if !feature_set.snapshot().use_account_data_size_delta_for_cost_tracking {
-    //     calculate_impl(instructions, feature-set)
-    // } else {
-    //     0
-    // }
+    // NOTE when bank feature gate of track with actual accounts_data_size_delta lands
+    // and activated, return `0`
 
     calculate_impl(instructions, feature_set)
 }

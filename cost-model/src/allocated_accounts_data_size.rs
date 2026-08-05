@@ -141,12 +141,12 @@ fn calculate_impl<'a>(
     for (program_id, instruction) in instructions {
         match calculate_on_instruction(program_id, instruction, feature_set) {
             SystemProgramAccountAllocation::Failed => {
-                // If any system program instructions can be statically
-                // determined to fail, no allocations will actually be
-                // persisted by the transaction. So return 0 here so that no
-                // account allocation budget is used for this failed
-                // transaction.
-                return 0;
+                // Runtime execution stops at the first failing
+                // instruction. Keep allocations from earlier instructions
+                // because they may have already executed before rollback,
+                // but ignore any later instructions because they will not
+                // be reached.
+                break;
             }
             SystemProgramAccountAllocation::None => continue,
             SystemProgramAccountAllocation::Some(ix_attempted_allocation_size) => {

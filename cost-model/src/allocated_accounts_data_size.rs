@@ -270,13 +270,14 @@ mod tests {
 
     #[test]
     fn test_calculate_overflow() {
+        let space = 100;
         let transaction = Transaction::new_unsigned(Message::new(
             &[
                 system_instruction::create_account(
                     &Pubkey::new_unique(),
                     &Pubkey::new_unique(),
                     1,
-                    100,
+                    space,
                     &Pubkey::new_unique(),
                 ),
                 system_instruction::allocate(&Pubkey::new_unique(), u64::MAX),
@@ -286,7 +287,7 @@ mod tests {
         let sanitized_tx = RuntimeTransaction::from_transaction_for_tests(transaction);
 
         assert_eq!(
-            0, // SystemProgramAccountAllocation::Failed,
+            space,
             calculate(
                 sanitized_tx.program_instructions_iter(),
                 &FeatureSet::all_enabled()
@@ -296,9 +297,10 @@ mod tests {
 
     #[test]
     fn test_calculate_invalid_ix() {
+        let space = 100;
         let transaction = Transaction::new_unsigned(Message::new(
             &[
-                system_instruction::allocate(&Pubkey::new_unique(), 100),
+                system_instruction::allocate(&Pubkey::new_unique(), space),
                 Instruction::new_with_bincode(system_program::id(), &(), vec![]),
             ],
             Some(&Pubkey::new_unique()),
@@ -306,7 +308,7 @@ mod tests {
         let sanitized_tx = RuntimeTransaction::from_transaction_for_tests(transaction);
 
         assert_eq!(
-            0, // SystemProgramAccountAllocation::Failed,
+            space,
             calculate(
                 sanitized_tx.program_instructions_iter(),
                 &FeatureSet::all_enabled()

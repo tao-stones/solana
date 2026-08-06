@@ -7649,7 +7649,6 @@ dependencies = [
  "solana-short-vec",
  "solana-signature",
  "solana-signer",
- "solana-svm-transaction",
  "solana-system-interface 3.3.0",
  "solana-system-transaction",
  "solana-time-utils",

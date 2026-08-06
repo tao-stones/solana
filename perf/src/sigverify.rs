@@ -8,9 +8,10 @@ use {
         transaction_view::SanitizedTransactionView,
     },
     rayon::prelude::*,
-    solana_pubkey::Pubkey,
-    solana_runtime_transaction::sanitize_config::sanitize_config,
-    solana_svm_transaction::instruction::SVMInstruction,
+    solana_runtime_transaction::{
+        sanitize_config::sanitize_config,
+        simple_vote_transaction_checker::is_simple_vote_transaction,
+    },
 };
 
 // Empirically derived to constrain max verify latency to ~8ms at lower packet counts
@@ -75,78 +76,12 @@ pub fn count_valid_packets<'a>(batches: impl IntoIterator<Item = &'a PacketBatch
         .sum()
 }
 
-/// Simple vote transaction meets these conditions:
-/// 1. has 1 or 2 signatures;
-/// 2. is a legacy message;
-/// 3. has 1 to 3 instructions;
-/// 4. first instruction is a vote instruction;
-/// 5. optional second instruction is `SetComputeUnitLimit`;
-/// 6. optional third instruction is `SetLoadedAccountsDataSizeLimit`.
-///
-/// Static instruction layout note:
-///
-/// Other compute-budget instruction orders may be valid runtime transactions,
-/// but they are not marked `SIMPLE_VOTE_TX` here. Keeping this classifier narrow
-/// avoids compute-budget deserialization and keeps the SigVerify hot path
-/// branch-light and easy to audit before AG is activated.
 fn is_simple_vote_transaction_view<D: TransactionData>(view: &SanitizedTransactionView<D>) -> bool {
-    // vote could have 1 or 2 sigs; zero sig has already been excluded by sanitization.
-    if view.num_signatures() > 2 {
-        return false;
-    }
-
-    // simple vote should only be legacy message
-    if !matches!(view.version(), TransactionVersion::Legacy) {
-        return false;
-    }
-
-    // has 1 to 3 instructions...
-    let mut program_instructions = view.program_instructions_iter();
-    let Some((program_id, _instruction)) = program_instructions.next() else {
-        return false;
-    };
-    if *program_id != solana_sdk_ids::vote::id() {
-        return false;
-    }
-
-    let Some((program_id, instruction)) = program_instructions.next() else {
-        return true;
-    };
-    if !is_compute_budget_instruction(
-        program_id,
-        &instruction,
-        SET_COMPUTE_UNIT_LIMIT_DISCRIMINATOR,
-    ) {
-        return false;
-    }
-
-    let Some((program_id, instruction)) = program_instructions.next() else {
-        return true;
-    };
-    is_compute_budget_instruction(
-        program_id,
-        &instruction,
-        SET_LOADED_ACCOUNTS_DATA_SIZE_LIMIT_DISCRIMINATOR,
-    ) && program_instructions.next().is_none()
-}
-
-// Local wire-format discriminators for the compute-budget instructions accepted
-// by the temporary SigVerify simple-vote fast path. These mirror
-// `solana_compute_budget_interface::ComputeBudgetInstruction` serialization.
-const SET_COMPUTE_UNIT_LIMIT_DISCRIMINATOR: u8 = 2;
-const SET_LOADED_ACCOUNTS_DATA_SIZE_LIMIT_DISCRIMINATOR: u8 = 4;
-
-fn is_compute_budget_instruction(
-    program_id: &Pubkey,
-    instruction: &SVMInstruction,
-    discriminator: u8,
-) -> bool {
-    // Both SetComputeUnitLimit and SetLoadedAccountsDataSizeLimit have `u32` data.
-    const COMPUTE_BUDGET_INSTRUCTION_DATA_LEN: usize = 1 + core::mem::size_of::<u32>();
-
-    *program_id == solana_sdk_ids::compute_budget::id()
-        && instruction.data.len() == COMPUTE_BUDGET_INSTRUCTION_DATA_LEN
-        && instruction.data[0] == discriminator
+    is_simple_vote_transaction(
+        view.signatures().len(),
+        matches!(view.version(), TransactionVersion::Legacy),
+        view.program_instructions_iter(),
+    )
 }
 
 pub fn ed25519_verify(

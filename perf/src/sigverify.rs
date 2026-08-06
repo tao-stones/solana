@@ -8,7 +8,9 @@ use {
         transaction_view::SanitizedTransactionView,
     },
     rayon::prelude::*,
+    solana_pubkey::Pubkey,
     solana_runtime_transaction::sanitize_config::sanitize_config,
+    solana_svm_transaction::instruction::SVMInstruction,
 };
 
 // Empirically derived to constrain max verify latency to ~8ms at lower packet counts
@@ -73,6 +75,20 @@ pub fn count_valid_packets<'a>(batches: impl IntoIterator<Item = &'a PacketBatch
         .sum()
 }
 
+/// Simple vote transaction meets these conditions:
+/// 1. has 1 or 2 signatures;
+/// 2. is a legacy message;
+/// 3. has 1 to 3 instructions;
+/// 4. first instruction is a vote instruction;
+/// 5. optional second instruction is `SetComputeUnitLimit`;
+/// 6. optional third instruction is `SetLoadedAccountsDataSizeLimit`.
+///
+/// Static instruction layout note:
+///
+/// Other compute-budget instruction orders may be valid runtime transactions,
+/// but they are not marked `SIMPLE_VOTE_TX` here. Keeping this classifier narrow
+/// avoids compute-budget deserialization and keeps the SigVerify hot path
+/// branch-light and easy to audit before AG is activated.
 fn is_simple_vote_transaction_view<D: TransactionData>(view: &SanitizedTransactionView<D>) -> bool {
     // vote could have 1 or 2 sigs; zero sig has already been excluded by sanitization.
     if view.num_signatures() > 2 {
@@ -84,25 +100,53 @@ fn is_simple_vote_transaction_view<D: TransactionData>(view: &SanitizedTransacti
         return false;
     }
 
-    // skip if has more than 1 instruction
-    if view.num_instructions() != 1 {
+    // has 1 to 3 instructions...
+    let mut program_instructions = view.program_instructions_iter();
+    let Some((program_id, _instruction)) = program_instructions.next() else {
+        return false;
+    };
+    if *program_id != solana_sdk_ids::vote::id() {
         return false;
     }
 
-    let mut instructions = view.instructions_iter();
-    let Some(instruction) = instructions.next() else {
-        return false;
+    let Some((program_id, instruction)) = program_instructions.next() else {
+        return true;
     };
-    if instructions.next().is_some() {
+    if !is_compute_budget_instruction(
+        program_id,
+        &instruction,
+        SET_COMPUTE_UNIT_LIMIT_DISCRIMINATOR,
+    ) {
         return false;
     }
 
-    let program_id_index = usize::from(instruction.program_id_index);
-    let Some(program_id) = view.static_account_keys().get(program_id_index) else {
-        return false;
+    let Some((program_id, instruction)) = program_instructions.next() else {
+        return true;
     };
+    is_compute_budget_instruction(
+        program_id,
+        &instruction,
+        SET_LOADED_ACCOUNTS_DATA_SIZE_LIMIT_DISCRIMINATOR,
+    ) && program_instructions.next().is_none()
+}
 
-    *program_id == solana_sdk_ids::vote::id()
+// Local wire-format discriminators for the compute-budget instructions accepted
+// by the temporary SigVerify simple-vote fast path. These mirror
+// `solana_compute_budget_interface::ComputeBudgetInstruction` serialization.
+const SET_COMPUTE_UNIT_LIMIT_DISCRIMINATOR: u8 = 2;
+const SET_LOADED_ACCOUNTS_DATA_SIZE_LIMIT_DISCRIMINATOR: u8 = 4;
+
+fn is_compute_budget_instruction(
+    program_id: &Pubkey,
+    instruction: &SVMInstruction,
+    discriminator: u8,
+) -> bool {
+    // Both SetComputeUnitLimit and SetLoadedAccountsDataSizeLimit have `u32` data.
+    const COMPUTE_BUDGET_INSTRUCTION_DATA_LEN: usize = 1 + core::mem::size_of::<u32>();
+
+    *program_id == solana_sdk_ids::compute_budget::id()
+        && instruction.data.len() == COMPUTE_BUDGET_INSTRUCTION_DATA_LEN
+        && instruction.data[0] == discriminator
 }
 
 pub fn ed25519_verify(
@@ -218,6 +262,49 @@ mod tests {
         .unwrap();
 
         VersionedTransaction::try_new(VersionedMessage::V1(message), &[&payer]).unwrap()
+    }
+
+    fn legacy_tx_from_instructions(instructions: Vec<Instruction>) -> Transaction {
+        let payer = Keypair::new();
+        Transaction::new(
+            &[&payer],
+            Message::new(&instructions, Some(&payer.pubkey())),
+            Hash::new_unique(),
+        )
+    }
+
+    fn vote_instruction() -> Instruction {
+        Instruction {
+            program_id: solana_vote_program::id(),
+            accounts: vec![],
+            data: vec![1, 2, 3],
+        }
+    }
+
+    fn compute_budget_instruction(discriminator: u8) -> Instruction {
+        Instruction {
+            program_id: solana_sdk_ids::compute_budget::id(),
+            accounts: vec![],
+            data: vec![discriminator, 0, 0, 0, 0],
+        }
+    }
+
+    fn set_compute_unit_limit_instruction() -> Instruction {
+        compute_budget_instruction(2)
+    }
+
+    fn set_loaded_accounts_data_size_limit_instruction() -> Instruction {
+        compute_budget_instruction(4)
+    }
+
+    fn is_simple_vote_tx(tx: Transaction) -> bool {
+        let packet = BytesPacket::from_data(tx).unwrap();
+        let view = SanitizedTransactionView::try_new_sanitized(
+            packet.as_ref().data(..).unwrap(),
+            &sanitize_config(),
+        )
+        .unwrap();
+        is_simple_vote_transaction_view(&view)
     }
 
     #[test]
@@ -676,6 +763,36 @@ mod tests {
             .unwrap();
             assert!(!is_simple_vote_transaction_view(&view));
         }
+
+        // legacy vote tx with compute-budget limit ixs is
+        assert!(is_simple_vote_tx(legacy_tx_from_instructions(vec![
+            vote_instruction(),
+            set_compute_unit_limit_instruction(),
+        ])));
+        assert!(is_simple_vote_tx(legacy_tx_from_instructions(vec![
+            vote_instruction(),
+            set_compute_unit_limit_instruction(),
+            set_loaded_accounts_data_size_limit_instruction(),
+        ])));
+
+        // legacy vote tx with wrong compute-budget order is not
+        assert!(!is_simple_vote_tx(legacy_tx_from_instructions(vec![
+            vote_instruction(),
+            set_loaded_accounts_data_size_limit_instruction(),
+        ])));
+        assert!(!is_simple_vote_tx(legacy_tx_from_instructions(vec![
+            vote_instruction(),
+            set_loaded_accounts_data_size_limit_instruction(),
+            set_compute_unit_limit_instruction(),
+        ])));
+
+        // legacy vote tx with a fourth instruction is not
+        assert!(!is_simple_vote_tx(legacy_tx_from_instructions(vec![
+            vote_instruction(),
+            set_compute_unit_limit_instruction(),
+            set_loaded_accounts_data_size_limit_instruction(),
+            compute_budget_instruction(3),
+        ])));
     }
 
     #[test_case(false, false; "ok_ixs_legacy")]

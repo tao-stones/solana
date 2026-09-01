@@ -1542,7 +1542,7 @@ pub mod double_disinflation_rate {
 }
 
 pub mod remove_runtime_float_ops {
-    solana_pubkey::declare_id!("f1oLidjkbR891GgJ1LFK63dPgJhC5t3s9uUYkXvkwyp");
+    solana_pubkey::declare_id!("S6o78jV2Hpn95wEW9CjSUkEdNwQCj1edYpCD4tGQLo3");
 }
 
 pub mod remove_inactive_stakes {

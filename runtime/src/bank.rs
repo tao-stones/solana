@@ -6461,12 +6461,12 @@ impl Bank {
     fn apply_double_disinflation_rate(&mut self) {
         let mut inflation = *self.inflation.read().unwrap();
         let taper = feature_set::double_disinflation_rate::TAPER;
-        inflation.taper = taper;
         if !self.use_fixed_point_inflation_rewards() {
             let year = self.slot_in_year_for_inflation();
             let anchor_rate = inflation.total(year);
             inflation.initial = anchor_rate / (1.0 - taper).powf(year);
         }
+        inflation.taper = taper;
         // The lock is shared with parent and sibling banks; replace it instead
         // of writing through it so every boundary bank anchors off the
         // pre-activation schedule and other forks never observe the change.

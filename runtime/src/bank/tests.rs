@@ -5377,9 +5377,14 @@ fn test_fuzz_instructions() {
 // test matrix that tests the bank hash calculation with and without your
 // added feature.
 #[allow(deprecated)]
-#[test_case(false ; "legacy")]
-#[test_case(true ; "deprecate rent exemption threshold")]
-fn test_bank_hash_consistency(deprecate_rent_exemption_threshold: bool) {
+#[test_case(false, false ; "legacy")]
+#[test_case(true, false ; "deprecate rent exemption threshold")]
+#[test_case(false, true ; "remove runtime float ops")]
+#[test_case(true, true ; "deprecate rent exemption threshold and remove runtime float ops")]
+fn test_bank_hash_consistency(
+    deprecate_rent_exemption_threshold: bool,
+    remove_runtime_float_ops: bool,
+) {
     const VALIDATOR_STAKE_LAMPORTS: u64 = 100 * LAMPORTS_PER_SOL;
 
     let mut genesis_config = GenesisConfig {
@@ -5434,6 +5439,9 @@ fn test_bank_hash_consistency(deprecate_rent_exemption_threshold: bool) {
 
     if !deprecate_rent_exemption_threshold {
         feature_set.deactivate(&feature_set::deprecate_rent_exemption_threshold::id());
+    }
+    if !remove_runtime_float_ops {
+        feature_set.deactivate(&feature_set::remove_runtime_float_ops::id());
     }
 
     let (mut bank, _bank_forks) = Bank::new_from_genesis(
@@ -5518,10 +5526,11 @@ fn test_bank_hash_consistency(deprecate_rent_exemption_threshold: bool) {
             assert_eq!(bank.epoch(), 0);
             assert_eq!(
                 bank.hash().to_string(),
-                if deprecate_rent_exemption_threshold {
-                    "G1rANcscD2mdoaAwdXn29ERibx3o7Ks1Nk7h1C6Sfhk2"
-                } else {
-                    "6gnFRPMgyQ1fj2xLKoQFwHqMCQ6HPPYLG7TUZFmuCen9"
+                match (deprecate_rent_exemption_threshold, remove_runtime_float_ops) {
+                    (false, false) => "6gnFRPMgyQ1fj2xLKoQFwHqMCQ6HPPYLG7TUZFmuCen9",
+                    (true, false) => "G1rANcscD2mdoaAwdXn29ERibx3o7Ks1Nk7h1C6Sfhk2",
+                    (false, true) => "6gnFRPMgyQ1fj2xLKoQFwHqMCQ6HPPYLG7TUZFmuCen9",
+                    (true, true) => "G1rANcscD2mdoaAwdXn29ERibx3o7Ks1Nk7h1C6Sfhk2",
                 },
             );
         }
@@ -5530,10 +5539,11 @@ fn test_bank_hash_consistency(deprecate_rent_exemption_threshold: bool) {
             assert_eq!(bank.epoch(), 1);
             assert_eq!(
                 bank.hash().to_string(),
-                if deprecate_rent_exemption_threshold {
-                    "TDnXLFxaMVtN4KFKmdSc28zTfQjd2sPVazrVkfUFv3G"
-                } else {
-                    "9HL7PKa6Xt6CPqJFmdM4zWziH2YZzA7U92cbhLvTuubF"
+                match (deprecate_rent_exemption_threshold, remove_runtime_float_ops) {
+                    (false, false) => "9HL7PKa6Xt6CPqJFmdM4zWziH2YZzA7U92cbhLvTuubF",
+                    (true, false) => "TDnXLFxaMVtN4KFKmdSc28zTfQjd2sPVazrVkfUFv3G",
+                    (false, true) => "5dbXpswXDuZrKZ6txT7PLbVBTy6BypWCBrt5TrQmPT9S",
+                    (true, true) => "AArHrZt6eeUGQearc9LTFZopBkMciVQRNpZm6oqUXU4g",
                 },
             );
         }
@@ -5541,10 +5551,11 @@ fn test_bank_hash_consistency(deprecate_rent_exemption_threshold: bool) {
             assert_eq!(bank.epoch(), 2);
             assert_eq!(
                 bank.hash().to_string(),
-                if deprecate_rent_exemption_threshold {
-                    "G8mgrJ1vGXTfjRS8mmjYeHzkGwRLN5jvyirpApzB6Box"
-                } else {
-                    "6wrhEo1vT3P6bH8SuJrs7orouw7ivBkWs2XetuneH3hT"
+                match (deprecate_rent_exemption_threshold, remove_runtime_float_ops) {
+                    (false, false) => "6wrhEo1vT3P6bH8SuJrs7orouw7ivBkWs2XetuneH3hT",
+                    (true, false) => "G8mgrJ1vGXTfjRS8mmjYeHzkGwRLN5jvyirpApzB6Box",
+                    (false, true) => "6fT1vyJCqW33fEcbWDLPSCPf7Aeak92JmTtrm8UK4vWv",
+                    (true, true) => "ALkRr7RtoCf9jG5gNX17oTj83U9neDwYAALV33YP44SZ",
                 },
             );
             break;

@@ -5857,7 +5857,7 @@ fn test_bank_hash_deterministic_with_stakes_cache() {
 
     assert_eq!(
         bank2.hash().to_string(),
-        "9agm2yVmnQmfwLy1jBV4kgf26Fk6q2gtJ2q9nWRTFs37",
+        "9LHs65jT3mUdAVrMJ297bmVekjGvdZcAD9fRbxzcr93D",
     );
 }
 
@@ -8831,6 +8831,10 @@ fn test_get_inflation_num_slots_with_activations() {
         genesis_config.accounts.remove(&pair.vote_id).unwrap();
         genesis_config.accounts.remove(&pair.enable_id).unwrap();
     }
+    genesis_config
+        .accounts
+        .remove(&feature_set::remove_runtime_float_ops::id())
+        .unwrap();
 
     let (bank0, _bank_forks) =
         Bank::new_for_tests(&genesis_config).wrap_with_bank_forks_for_tests();

@@ -3111,7 +3111,10 @@ impl Bank {
         if self.use_fixed_point_inflation_rewards() {
             return self
                 .calculate_epoch_inflation_rewards_fixed_point(capitalization, epoch)
-                .expect("fixed-point inflation rewards must be supported when remove_runtime_float_ops is active");
+                .expect(
+                    "fixed-point inflation rewards must be supported when \
+                     remove_runtime_float_ops is active",
+                );
         }
 
         self.calculate_epoch_inflation_rewards_legacy(capitalization, epoch)

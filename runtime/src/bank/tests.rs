@@ -7299,9 +7299,8 @@ fn test_remove_runtime_float_ops_epoch_rewards_activation_boundary() {
 }
 
 #[test]
-#[should_panic(
-    expected = "fixed-point inflation rewards must be supported when remove_runtime_float_ops is active"
-)]
+#[should_panic(expected = "fixed-point inflation rewards must be supported when \
+                           remove_runtime_float_ops is active")]
 fn test_remove_runtime_float_ops_epoch_rewards_does_not_fall_back_to_legacy() {
     const SLOTS_PER_EPOCH: Slot = 432_000;
     let (mut genesis_config, _mint_keypair) = create_genesis_config(1_000_000);

@@ -7299,6 +7299,24 @@ fn test_remove_runtime_float_ops_epoch_rewards_activation_boundary() {
 }
 
 #[test]
+fn test_remove_runtime_float_ops_disabled_inflation_allows_custom_slot_timing() {
+    let (mut genesis_config, _mint_keypair) = create_genesis_config(1_000_000);
+    genesis_config.inflation = Inflation::new_disabled();
+    genesis_config.poh_config = PohConfig::new_sleep(Duration::from_micros(100));
+    genesis_config.ticks_per_slot = 1;
+    activate_feature(
+        &mut genesis_config,
+        feature_set::remove_runtime_float_ops::id(),
+    );
+
+    let (bank, _bank_forks) = Bank::new_with_bank_forks_for_tests(&genesis_config);
+    assert_eq!(
+        bank.calculate_epoch_inflation_rewards(1_000_000 * LAMPORTS_PER_SOL, bank.epoch()),
+        0
+    );
+}
+
+#[test]
 #[should_panic(expected = "fixed-point inflation rewards must be supported when \
                            remove_runtime_float_ops is active")]
 fn test_remove_runtime_float_ops_epoch_rewards_does_not_fall_back_to_legacy() {

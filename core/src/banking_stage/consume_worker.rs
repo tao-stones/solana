@@ -2078,14 +2078,14 @@ mod tests {
         crate::banking_stage::{
             committer::Committer,
             scheduler_messages::{MaxAge, TransactionBatchId},
-            tests::sanitize_transactions,
+            tests::{create_slow_genesis_config, sanitize_transactions},
         },
         crossbeam_channel::bounded,
         solana_clock::Slot,
         solana_genesis_config::GenesisConfig,
         solana_keypair::Keypair,
         solana_leader_schedule::SlotLeader,
-        solana_ledger::genesis_utils::{GenesisConfigInfo, create_genesis_config},
+        solana_ledger::genesis_utils::GenesisConfigInfo,
         solana_message::{
             AddressLookupTableAccount, SimpleAddressLoader, VersionedMessage,
             v0::{self, LoadedAddresses},
@@ -2134,10 +2134,13 @@ mod tests {
         ConsumeWorker<RuntimeTransaction<SanitizedTransaction>>,
     ) {
         let GenesisConfigInfo {
-            genesis_config,
+            mut genesis_config,
             mint_keypair,
             ..
-        } = create_genesis_config(10_000);
+        } = create_slow_genesis_config(10_000);
+        genesis_config
+            .accounts
+            .remove(&agave_feature_set::remove_runtime_float_ops::id());
         let (bank, bank_forks) = Bank::new_with_bank_forks_for_tests(&genesis_config);
         // Warp to next epoch for MaxAge tests.
         let bank = Bank::new_from_parent(

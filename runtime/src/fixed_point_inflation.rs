@@ -51,6 +51,7 @@ pub(crate) const PICO_RATE: u64 = 100_000_000_000;
 
 const ZERO_RATE: u64 = 0;
 const DEFAULT_TAPER_PERCENT: u64 = 15;
+const DOUBLE_TAPER_PERCENT: u64 = 30;
 
 /// Rational slots-per-year used for prorating annual rewards.
 ///
@@ -229,10 +230,7 @@ pub(crate) fn inflation_kind(
     // changes `validator(year)` to `total(year) - foundation(year)`, and there
     // is currently no SIMD-0607 fixed-point foundation calculation here.
     let uses_default_taper = matches_taper(inflation.taper, DEFAULT_TAPER_PERCENT);
-    let uses_double_taper = matches_taper(
-        inflation.taper,
-        feature_set::double_disinflation_rate::TAPER_PERCENT,
-    );
+    let uses_double_taper = matches_taper(inflation.taper, DOUBLE_TAPER_PERCENT);
     if matches_rate(inflation.initial, INITIAL_RATE)
         && matches_rate(inflation.terminal, TERMINAL_RATE)
         && (uses_default_taper || uses_double_taper)
@@ -359,7 +357,7 @@ fn matches_rate(rate: f64, scaled_rate: u64) -> bool {
 fn matches_taper(taper: f64, taper_percent: u64) -> bool {
     match taper_percent {
         DEFAULT_TAPER_PERCENT => taper.to_bits() == 0.15f64.to_bits(),
-        feature_set::double_disinflation_rate::TAPER_PERCENT => {
+        DOUBLE_TAPER_PERCENT => {
             taper.to_bits() == feature_set::double_disinflation_rate::TAPER.to_bits()
         }
         _ => false,

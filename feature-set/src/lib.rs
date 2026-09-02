@@ -1537,8 +1537,6 @@ pub mod double_disinflation_rate {
     solana_pubkey::declare_id!("55oikhjJ2LUi1xdgJ17ueRyHFURZEw32asT3iAKfh7gg");
     /// Taper (yearly disinflation rate) applied from activation onward.
     pub const TAPER: f64 = 0.30;
-    /// Integer representation used by SIMD-0607 reward calculations.
-    pub const TAPER_PERCENT: u64 = 30;
 }
 
 pub mod remove_runtime_float_ops {

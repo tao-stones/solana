@@ -3137,6 +3137,10 @@ impl Bank {
         epoch: Epoch,
     ) -> Option<u64> {
         let validator_rate = self.fixed_point_validator_rate()?;
+        if validator_rate == 0 {
+            return Some(0);
+        }
+
         let epoch_start_slot = self.epoch_schedule().get_first_slot_in_epoch(epoch);
         let slots_per_year =
             fixed_point_inflation::slots_per_year(self.slot_params_at_slot(epoch_start_slot))?;

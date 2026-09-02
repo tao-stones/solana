@@ -1442,14 +1442,18 @@ mod tests {
         activate_feature(&mut genesis_config, remove_runtime_float_ops::id());
 
         LocalCluster::deactivate_unsupported_fixed_point_rewards_features(&mut genesis_config);
-        assert!(genesis_config
-            .accounts
-            .contains_key(&remove_runtime_float_ops::id()));
+        assert!(
+            genesis_config
+                .accounts
+                .contains_key(&remove_runtime_float_ops::id())
+        );
 
         genesis_config.ticks_per_slot = 16;
         LocalCluster::deactivate_unsupported_fixed_point_rewards_features(&mut genesis_config);
-        assert!(!genesis_config
-            .accounts
-            .contains_key(&remove_runtime_float_ops::id()));
+        assert!(
+            !genesis_config
+                .accounts
+                .contains_key(&remove_runtime_float_ops::id())
+        );
     }
 }
